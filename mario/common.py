@@ -39,8 +39,10 @@ class BB:
         inp={"CONDITION":[2,c]};
         if s: inp["SUBSTACK"]=[2,s]
         b=self._add("control_if",inputs=inp);self._p(c,b);self._p(s,b);return b
+    def repeat_until(self,c,s): b=self._add("control_repeat_until",inputs={"CONDITION":[2,c],"SUBSTACK":[2,s]});self._p(c,b);self._p(s,b);return b
     def wait(self,s): return self._add("control_wait",inputs={"DURATION":[1,[5,str(s)]]})
     def stop_all(self): return self._add("control_stop",fields={"STOP_OPTION":["all",None]},mutation={"tagName":"mutation","children":[],"hasnext":"false"})
+    def stop_other(self): return self._add("control_stop",fields={"STOP_OPTION":["other scripts in sprite",None]},mutation={"tagName":"mutation","children":[],"hasnext":"true"})
     def goto(self,x,y): return self._add("motion_gotoxy",inputs={"X":[1,[4,str(x)]],"Y":[1,[4,str(y)]]})
     def glide(self,s,x,y): return self._add("motion_glidesecstoxy",inputs={"SECS":[1,[4,str(s)]],"X":[1,[4,str(x)]],"Y":[1,[4,str(y)]]})
     def set_x(self,v): return self._add("motion_setx",inputs={"X":[1,[4,str(v)]]})
@@ -56,6 +58,7 @@ class BB:
     def costume(self,n): return self._add("looks_switchcostumeto",inputs={"COSTUME":[1,[10,n]]})
     def backdrop(self,n): return self._add("looks_switchbackdropto",inputs={"BACKDROP":[1,[10,n]]})
     def set_size(self,p): return self._add("looks_setsizeto",inputs={"SIZE":[1,[4,str(p)]]})
+    def next_costume(self): return self._add("looks_nextcostume")
     def say(self,m): return self._add("looks_say",inputs={"MESSAGE":[1,[10,str(m)]]})
     def say_for(self,m,s): return self._add("looks_sayforsecs",inputs={"MESSAGE":[1,[10,str(m)]],"SECS":[1,[4,str(s)]]})
     def say_nothing(self): return self._add("looks_say",inputs={"MESSAGE":[1,[10,""]]})
@@ -83,6 +86,8 @@ class BB:
     def op_not(self,a): b=self._add("operator_not",inputs={"OPERAND":[2,a]});self._p(a,b);return b
     def lt_ypos(self,v):
         yp=self._add("motion_yposition");b=self._add("operator_lt",inputs={"OPERAND1":[3,yp,[10,""]],"OPERAND2":[1,[10,str(v)]]});self._p(yp,b);return b
+    def gt_ypos(self,v):
+        yp=self._add("motion_yposition");b=self._add("operator_gt",inputs={"OPERAND1":[3,yp,[10,""]],"OPERAND2":[1,[10,str(v)]]});self._p(yp,b);return b
     def broadcast(self,n,i): return self._add("event_broadcast",inputs={"BROADCAST_INPUT":[1,[11,n,i]]})
     def broadcast_wait(self,n,i): return self._add("event_broadcastandwait",inputs={"BROADCAST_INPUT":[1,[11,n,i]]})
 
