@@ -108,7 +108,7 @@ def build():
         "blocks": b.blocks, "currentCostume": 0,
         "costumes": [
             reg_svg("시작화면", bg_start(),    240, 180),
-            am.reg_png_backdrop("인트로", "bg_stage.png"),
+            am.reg_png_backdrop("인트로", "background/bg_stage.png"),
             reg_svg("인트로끝", bg_intro_end(), 240, 180),
         ],
         "sounds": [], "volume": 100, "layerOrder": 0,
@@ -247,7 +247,7 @@ def build():
         "isStage": False, "name": "Bowser",
         "variables": {}, "lists": {}, "broadcasts": {}, "comments": {},
         "blocks": bw.blocks, "currentCostume": 0,
-        "costumes": [am.reg_png("쿠파", "bowser/bowser_stand_1.png")],
+        "costumes": [am.reg_png("쿠파", "koopa/bowser_stand_1.png")],
         "sounds": [snd_hit], "volume": 100, "layerOrder": 6,
         "visible": False, "x": 200, "y": 200, "size": 100,
         "direction": 90, "draggable": False, "rotationStyle": "don't rotate",

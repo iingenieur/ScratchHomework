@@ -5,6 +5,7 @@
 """
 
 from common import *
+from mechanics import mario_physics, mario_movement, mario_jump, mario_enemy_hit, mario_gameover, mario_invincibility, hide_on_end
 
 
 def bg_start_s3():
@@ -16,109 +17,112 @@ def bg_start_s3():
         '<text x="240" y="240" text-anchor="middle" font-size="16" fill="#DDD">SPACE 키를 눌러 시작</text>')
 
 
-def build():
-    am = AssetManager()
-    BR = {k: uid() for k in ["스테이지3"]}
-    V = {k: uid() for k in ["하트", "속도Y", "점프중", "게임상태", "쿠파HP"]}
-    gvars = {V[k]: [k, v] for k, v in [("하트", 5), ("속도Y", 0), ("점프중", 0), ("게임상태", "start"), ("쿠파HP", 3)]}
-
-    snd_jump = am.reg_snd("Jump", gen_beep(600, 0.1))
-    snd_hit = am.reg_snd("Hit", gen_beep(200, 0.2))
-    snd_win = am.reg_snd("Win", gen_beep(900, 0.3))
-    snd_fire = am.reg_snd("Fire", gen_beep(400, 0.1))
-
-    # ==================== STAGE ====================
+# ════════════════════════════════════════════════════════════════════════
+# Stage 스프라이트
+# ════════════════════════════════════════════════════════════════════════
+def build_stage(am, V, BR):
     b = BB()
     f0 = b.flag()
     init = [b.backdrop("시작화면"), b.set_var("게임상태", V["게임상태"], "start"),
             b.set_var("하트", V["하트"], 5), b.set_var("속도Y", V["속도Y"], 0),
-            b.set_var("점프중", V["점프중"], 0), b.set_var("쿠파HP", V["쿠파HP"], 3),
-            b.stop_sounds()]
+            b.set_var("점프중", V["점프중"], 0), b.set_var("무적", V["무적"], 0),
+            b.set_var("쿠파HP", V["쿠파HP"], 3), b.stop_sounds()]
     b.chain([f0] + init)
 
-    # SPACE to start
     sp = b.key_hat("space")
     c1 = b.eq_var("게임상태", V["게임상태"], "start")
     s1 = [b.set_var("게임상태", V["게임상태"], "stage3"), b.backdrop("스테이지3"),
           b.broadcast("스테이지3", BR["스테이지3"])]
     b.chain(s1); if1 = b.if_then(c1, s1[0])
-    # Restart from gameover
+
     c2 = b.eq_var("게임상태", V["게임상태"], "gameover")
     s2 = [b.set_var("하트", V["하트"], 5), b.set_var("쿠파HP", V["쿠파HP"], 3),
           b.set_var("속도Y", V["속도Y"], 0), b.set_var("점프중", V["점프중"], 0),
+          b.set_var("무적", V["무적"], 0),
           b.set_var("게임상태", V["게임상태"], "stage3"), b.backdrop("스테이지3"),
           b.broadcast("스테이지3", BR["스테이지3"])]
     b.chain(s2); if2 = b.if_then(c2, s2[0])
-    # Restart from win
+
     c3 = b.eq_var("게임상태", V["게임상태"], "win")
     s3 = [b.set_var("하트", V["하트"], 5), b.set_var("쿠파HP", V["쿠파HP"], 3),
           b.set_var("속도Y", V["속도Y"], 0), b.set_var("점프중", V["점프중"], 0),
+          b.set_var("무적", V["무적"], 0),
           b.set_var("게임상태", V["게임상태"], "stage3"), b.backdrop("스테이지3"),
           b.broadcast("스테이지3", BR["스테이지3"])]
     b.chain(s3); if3 = b.if_then(c3, s3[0])
     b.chain([sp, if1, if2, if3])
 
-    stage_target = {
+    gvars = {V[k]: [k, v] for k, v in [("하트", 5), ("속도Y", 0), ("점프중", 0), ("게임상태", "start"), ("쿠파HP", 3), ("무적", 0), ("걸음", 1)]}
+
+    return {
         "isStage": True, "name": "Stage", "variables": gvars, "lists": {}, "comments": {},
         "broadcasts": {v: k for k, v in BR.items()},
         "blocks": b.blocks, "currentCostume": 0,
-        "costumes": [am.reg_png_backdrop("시작화면", "bg_stage.png"),
-                     am.reg_png_backdrop("스테이지3", "bg_stage.png"),
+        "costumes": [am.reg_png_backdrop("시작화면", "background/bg_stage.png"),
+                     am.reg_png_backdrop("스테이지3", "background/bg_stage.png"),
                      am.reg("게임오버", bg_gameover(), 240, 180),
                      am.reg("승리", bg_victory(), 240, 180)],
         "sounds": [], "volume": 100, "layerOrder": 0, "tempo": 60,
         "videoTransparency": 50, "videoState": "off", "textToSpeechLanguage": None
     }
 
-    # ==================== MARIO ====================
+
+# ════════════════════════════════════════════════════════════════════════
+# Mario 스프라이트
+# ════════════════════════════════════════════════════════════════════════
+def build_mario(am, V, BR, sounds):
     m = BB()
-    mf = m.flag(); m.chain([mf, m.goto(-150, GY), m.set_size(100), m.costume("걷기1"), m.show()])
+    mf = m.flag()
+    m.chain([mf, m.goto(-150, GY + 7), m.set_size(45), m.costume("걷기1"), m.show()])
 
     mh3 = m.bcast_hat("스테이지3", BR["스테이지3"])
-    m3_init = [m.goto(-150, GY), m.costume("걷기1"),
-               m.set_var("속도Y", V["속도Y"], 0), m.set_var("점프중", V["점프중"], 0)]
+    m3_init = [m.goto(-150, GY + 7), m.costume("걷기1"),
+               m.set_var("속도Y", V["속도Y"], 0), m.set_var("점프중", V["점프중"], 0),
+               m.set_var("무적", V["무적"], 0), m.set_var("걸음", V["걸음"], 1)]
 
-    # Physics
-    grav3 = m.change_var("속도Y", V["속도Y"], -1)
-    av3 = m.change_y_var("속도Y", V["속도Y"])
-    cg3 = m.lt_ypos(GY)
-    gs3 = [m.set_y(GY), m.set_var("속도Y", V["속도Y"], 0), m.set_var("점프중", V["점프중"], 0)]
-    m.chain(gs3); ifg3 = m.if_then(cg3, gs3[0])
-    # Movement
-    kr3 = m.key_pressed("right arrow"); mvr3 = m.change_x(4); ifr3 = m.if_then(kr3, mvr3)
-    kl3 = m.key_pressed("left arrow"); mvl3 = m.change_x(-4); ifl3 = m.if_then(kl3, mvl3)
-    # Jump
-    kj3 = m.key_pressed("space"); cnj3 = m.eq_var("점프중", V["점프중"], 0); cj3 = m.op_and(kj3, cnj3)
-    jb3 = [m.set_var("속도Y", V["속도Y"], 13), m.set_var("점프중", V["점프중"], 1), m.play_sound("Jump")]
-    m.chain(jb3); ifj3 = m.if_then(cj3, jb3[0])
-    # Bowser touch
-    tb3 = m.touching("Bowser")
-    bh3 = [m.change_var("하트", V["하트"], -1), m.play_sound("Hit"), m.goto(-150, GY), m.wait(0.5)]
-    m.chain(bh3); ifb3 = m.if_then(tb3, bh3[0])
-    # Heart check
-    ch3 = m.lt_var("하트", V["하트"], 1)
-    die3 = [m.set_var("게임상태", V["게임상태"], "gameover"), m.backdrop("게임오버"), m.stop_all()]
-    m.chain(die3); ifd3 = m.if_then(ch3, die3[0])
-    # Win check
+    # 기능별 독립 함수 호출 (Stage 1과 동일한 기본 동작)
+    physics_blocks = mario_physics(m, V, ground_y=GY+7, landing_costume="걷기1")
+    move_blocks    = mario_movement(m, V=V, speed=5, with_direction=True, walk_mode="next")
+    jump_block     = mario_jump(m, V, velocity=14, jump_costume="점프1")
+    enemy_block    = mario_enemy_hit(m, V, "Bowser", reset_x=-150, reset_y=GY, BR=BR)
+    gameover_block = mario_gameover(m, V)
+
+    # 승리 판정 (Stage 3 전용: 쿠파HP < 1)
     cwin = m.lt_var("쿠파HP", V["쿠파HP"], 1)
     win3 = [m.say_for("피치 공주를 구했다!", 2), m.set_var("게임상태", V["게임상태"], "win"),
-            m.backdrop("승리"), m.stop_all()]
-    m.chain(win3); ifw3 = m.if_then(cwin, win3[0])
+            m.backdrop("승리"), m.hide()]
+    m.chain(win3)
+    ifw3 = m.if_then(cwin, win3[0])
 
-    m.chain([grav3, av3, ifg3, ifr3, ifl3, ifj3, ifb3, ifd3, ifw3])
+    # forever 루프 조립
+    all_blocks = physics_blocks + move_blocks + [jump_block, enemy_block, gameover_block, ifw3]
+    m.chain(all_blocks)
     cs3 = m.eq_var("게임상태", V["게임상태"], "stage3")
-    ifs3 = m.if_then(cs3, grav3); fs3 = m.forever(ifs3)
+    ifs3 = m.if_then(cs3, all_blocks[0])
+    fs3 = m.forever(ifs3)
     m.chain([mh3] + m3_init + [fs3])
 
-    mario = {"isStage": False, "name": "Mario", "variables": {}, "lists": {}, "broadcasts": {}, "comments": {},
+    # 무적 처리 (별도 스크립트)
+    mario_invincibility(m, V, BR, duration=1.0)
+
+    # 종료 백드롭 전환 시 hide
+    hide_on_end(m, ("게임오버", "승리"))
+
+    return {
+        "isStage": False, "name": "Mario", "variables": {}, "lists": {}, "broadcasts": {}, "comments": {},
         "blocks": m.blocks, "currentCostume": 0,
         "costumes": [am.reg_png("걷기1", "mario/mario3_walk_1.png"), am.reg_png("걷기3", "mario/mario3_walk_3.png"),
                      am.reg_png("걷기4", "mario/mario3_walk_4.png"), am.reg_png("걷기5", "mario/mario3_walk_5.png"),
                      am.reg_png("걷기6", "mario/mario3_walk_6.png"), am.reg_png("점프1", "mario/mario3_jump_5.png")],
-        "sounds": [snd_jump, snd_hit, snd_win], "volume": 100, "layerOrder": 8, "visible": True,
-        "x": -150, "y": GY, "size": 100, "direction": 90, "draggable": False, "rotationStyle": "left-right"}
+        "sounds": sounds, "volume": 100, "layerOrder": 8, "visible": True,
+        "x": -150, "y": GY, "size": 45, "direction": 90, "draggable": False, "rotationStyle": "left-right"
+    }
 
-    # ==================== BOWSER ====================
+
+# ════════════════════════════════════════════════════════════════════════
+# Bowser 스프라이트
+# ════════════════════════════════════════════════════════════════════════
+def make_bowser(am, V, BR, sounds):
     bw = BB()
     bwf = bw.flag(); bw.chain([bwf, bw.hide()])
 
@@ -128,7 +132,7 @@ def build():
     bw.chain([bwgl, bwgr]); bwf3 = bw.forever(bwgl)
     bw.chain([bwh3] + bwi3 + [bwf3])
 
-    # Defeat check
+    # 패배 체크
     bwh4 = bw.flag()
     cd = bw.lt_var("쿠파HP", V["쿠파HP"], 1)
     bwd = [bw.say_for("으아아악!!", 1), bw.hide()]
@@ -138,12 +142,20 @@ def build():
     ifs3b = bw.if_then(cs3b, ifbd); fbw = bw.forever(ifs3b)
     bw.chain([bwh4, fbw])
 
-    bowser = {"isStage": False, "name": "Bowser", "variables": {}, "lists": {}, "broadcasts": {}, "comments": {},
-        "blocks": bw.blocks, "currentCostume": 0, "costumes": [am.reg_png("쿠파", "bowser/bowser_stand_1.png")],
-        "sounds": [snd_hit], "volume": 100, "layerOrder": 6, "visible": False,
-        "x": 200, "y": 200, "size": 100, "direction": 90, "draggable": False, "rotationStyle": "don't rotate"}
+    hide_on_end(bw, ("게임오버", "승리"))
 
-    # ==================== PEACH ====================
+    return {
+        "isStage": False, "name": "Bowser", "variables": {}, "lists": {}, "broadcasts": {}, "comments": {},
+        "blocks": bw.blocks, "currentCostume": 0, "costumes": [am.reg_png("쿠파", "koopa/bowser_stand_1.png")],
+        "sounds": sounds, "volume": 100, "layerOrder": 6, "visible": False,
+        "x": 200, "y": 200, "size": 70, "direction": 90, "draggable": False, "rotationStyle": "don't rotate"
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Peach 스프라이트
+# ════════════════════════════════════════════════════════════════════════
+def make_peach(am, V, BR):
     p = BB()
     pf = p.flag(); p.chain([pf, p.hide()])
 
@@ -151,7 +163,6 @@ def build():
     pi3 = [p.goto(180, GY), p.hide()]
     p.chain([ph3] + pi3)
 
-    # Show when Bowser HP reaches 0
     ph3b = p.flag()
     cw3 = p.lt_var("쿠파HP", V["쿠파HP"], 1)
     pw3 = [p.show(), p.say("고마워요 마리오!")]
@@ -161,19 +172,26 @@ def build():
     ifs3p = p.if_then(cs3p, ifw); fps = p.forever(ifs3p)
     p.chain([ph3b, fps])
 
-    peach = {"isStage": False, "name": "Peach", "variables": {}, "lists": {}, "broadcasts": {}, "comments": {},
+    hide_on_end(p, ("게임오버", "승리"))
+
+    return {
+        "isStage": False, "name": "Peach", "variables": {}, "lists": {}, "broadcasts": {}, "comments": {},
         "blocks": p.blocks, "currentCostume": 0, "costumes": [am.reg_png("피치", "peach/peach_idle.png")],
         "sounds": [], "volume": 100, "layerOrder": 7, "visible": False,
-        "x": 180, "y": GY, "size": 90, "direction": 90, "draggable": False, "rotationStyle": "don't rotate"}
+        "x": 180, "y": GY, "size": 45, "direction": 90, "draggable": False, "rotationStyle": "don't rotate"
+    }
 
-    # ==================== FIREBALL ====================
+
+# ════════════════════════════════════════════════════════════════════════
+# Fireball 스프라이트
+# ════════════════════════════════════════════════════════════════════════
+def make_fireball(am, V, BR, sounds):
     fb = BB(); fbf = fb.flag(); fb.chain([fbf, fb.hide()])
 
     fbz = fb.key_hat("z")
     cs3f = fb.eq_var("게임상태", V["게임상태"], "stage3")
     fire = [fb.goto(-130, GY + 10), fb.show(), fb.play_sound("Fire"),
             fb.glide(0.5, 200, GY + 10)]
-    # Hit Bowser check
     tbw = fb.touching("Bowser")
     fhit = [fb.change_var("쿠파HP", V["쿠파HP"], -1), fb.play_sound("Hit")]
     fb.chain(fhit); ifhit = fb.if_then(tbw, fhit[0])
@@ -181,12 +199,34 @@ def build():
     iffs = fb.if_then(cs3f, fire[0])
     fb.chain([fbz, iffs])
 
-    fireball = {"isStage": False, "name": "Fireball", "variables": {}, "lists": {}, "broadcasts": {}, "comments": {},
-        "blocks": fb.blocks, "currentCostume": 0, "costumes": [am.reg("fire", svg_fireball(), 8, 8)],
-        "sounds": [snd_fire], "volume": 100, "layerOrder": 5, "visible": False,
-        "x": 0, "y": 0, "size": 100, "direction": 90, "draggable": False, "rotationStyle": "don't rotate"}
+    hide_on_end(fb, ("게임오버", "승리"))
 
-    # ==================== HEARTS ====================
+    return {
+        "isStage": False, "name": "Fireball", "variables": {}, "lists": {}, "broadcasts": {}, "comments": {},
+        "blocks": fb.blocks, "currentCostume": 0, "costumes": [am.reg("fire", svg_fireball(), 8, 8)],
+        "sounds": sounds, "volume": 100, "layerOrder": 5, "visible": False,
+        "x": 0, "y": 0, "size": 100, "direction": 90, "draggable": False, "rotationStyle": "don't rotate"
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════
+# BUILD + MAIN
+# ════════════════════════════════════════════════════════════════════════
+def build():
+    am = AssetManager()
+    BR = {k: uid() for k in ["스테이지3", "피격"]}
+    V = {k: uid() for k in ["하트", "속도Y", "점프중", "게임상태", "쿠파HP", "무적", "걸음"]}
+
+    snd_jump = am.reg_snd("Jump", gen_beep(600, 0.1))
+    snd_hit = am.reg_snd("Hit", gen_beep(200, 0.2))
+    snd_win = am.reg_snd("Win", gen_beep(900, 0.3))
+    snd_fire = am.reg_snd("Fire", gen_beep(400, 0.1))
+
+    stage_target = build_stage(am, V, BR)
+    mario = build_mario(am, V, BR, [snd_jump, snd_hit, snd_win])
+    bowser = make_bowser(am, V, BR, [snd_hit])
+    peach = make_peach(am, V, BR)
+    fireball = make_fireball(am, V, BR, [snd_fire])
     hearts = make_hearts(am, V)
 
     project = {

@@ -34,6 +34,7 @@ class BB:
     def flag(self): return self._add("event_whenflagclicked",top=True)
     def key_hat(self,k): return self._add("event_whenkeypressed",fields={"KEY_OPTION":[k,None]},top=True)
     def bcast_hat(self,n,i): return self._add("event_whenbroadcastreceived",fields={"BROADCAST_OPTION":[n,i]},top=True)
+    def backdrop_hat(self,n): return self._add("event_whenbackdropswitchesto",fields={"BACKDROP":[n,None]},top=True)
     def forever(self,s): b=self._add("control_forever",inputs={"SUBSTACK":[2,s]});self._p(s,b);return b
     def if_then(self,c,s):
         inp={"CONDITION":[2,c]};
@@ -56,9 +57,12 @@ class BB:
     def show(self): return self._add("looks_show")
     def hide(self): return self._add("looks_hide")
     def costume(self,n): return self._add("looks_switchcostumeto",inputs={"COSTUME":[1,[10,n]]})
+    def costume_var(self,n,i):
+        vr=self.var_ref(n,i);b=self._add("looks_switchcostumeto",inputs={"COSTUME":[3,vr,[10,""]]});self._p(vr,b);return b
     def backdrop(self,n): return self._add("looks_switchbackdropto",inputs={"BACKDROP":[1,[10,n]]})
     def set_size(self,p): return self._add("looks_setsizeto",inputs={"SIZE":[1,[4,str(p)]]})
     def next_costume(self): return self._add("looks_nextcostume")
+    def goto_front(self): return self._add("looks_gotofrontback",fields={"FRONT_BACK":["front",None]})
     def say(self,m): return self._add("looks_say",inputs={"MESSAGE":[1,[10,str(m)]]})
     def say_for(self,m,s): return self._add("looks_sayforsecs",inputs={"MESSAGE":[1,[10,str(m)]],"SECS":[1,[4,str(s)]]})
     def say_nothing(self): return self._add("looks_say",inputs={"MESSAGE":[1,[10,""]]})
@@ -206,20 +210,29 @@ def make_ground(am):
         "sounds":[],"volume":100,"layerOrder":1,"visible":True,
         "x":0,"y":GY-15,"size":100,"direction":90,"draggable":False,"rotationStyle":"don't rotate"}
 
-def make_hearts(am, V):
-    """하트 표시 스프라이트 생성"""
-    ht = BB(); htf = ht.flag(); ht.chain([htf, ht.goto(-160,160), ht.set_size(100), ht.costume("5"), ht.show()])
-    hth = ht.flag()
-    def heart_check(n):
-        cv = ht.eq_var("하트", V["하트"], n); cc = ht.costume(str(n)); return ht.if_then(cv, cc)
-    ih5=heart_check(5);ih4=heart_check(4);ih3=heart_check(3);ih2=heart_check(2);ih1=heart_check(1);ih0=heart_check(0)
-    hw = ht.wait(0.1); ht.chain([ih5,ih4,ih3,ih2,ih1,ih0,hw])
-    fht = ht.forever(ih5); ht.chain([hth, fht])
+def make_hearts(am, V, BR=None, end_backdrops=("게임오버", "클리어", "승리")):
+    """하트 표시 스프라이트 생성 (피격 브로드캐스트로 코스튬 전환)"""
+    ht = BB()
+    # 초기화: 5개 하트 표시
+    htf = ht.flag()
+    ht.chain([htf, ht.goto(-160,160), ht.set_size(100), ht.costume("h5"), ht.show()])
+    # 피격 시 다음 코스튬으로 (h5→h4→h3→h2→h1→h0)
+    if BR and "피격" in BR:
+        hth = ht.bcast_hat("피격", BR["피격"])
+        ht.chain([hth, ht.next_costume()])
+    # 게임 재시작 시 하트 풀 복구
+    if BR and "스테이지1" in BR:
+        htr = ht.bcast_hat("스테이지1", BR["스테이지1"])
+        ht.chain([htr, ht.costume("h5")])
+    # 종료 백드롭 전환 시 hide
+    for bd in end_backdrops:
+        hb = ht.backdrop_hat(bd)
+        ht.chain([hb, ht.hide()])
     return {"isStage":False,"name":"Hearts","variables":{},"lists":{},"broadcasts":{},"comments":{},
         "blocks":ht.blocks,"currentCostume":0,
-        "costumes":[am.reg("5",svg_hearts(5),56,10),am.reg("4",svg_hearts(4),56,10),
-                    am.reg("3",svg_hearts(3),56,10),am.reg("2",svg_hearts(2),56,10),
-                    am.reg("1",svg_hearts(1),56,10),am.reg("0",svg_hearts(0),56,10)],
+        "costumes":[am.reg("h5",svg_hearts(5),56,10),am.reg("h4",svg_hearts(4),56,10),
+                    am.reg("h3",svg_hearts(3),56,10),am.reg("h2",svg_hearts(2),56,10),
+                    am.reg("h1",svg_hearts(1),56,10),am.reg("h0",svg_hearts(0),56,10)],
         "sounds":[],"volume":100,"layerOrder":10,"visible":True,
         "x":-160,"y":160,"size":100,"direction":90,"draggable":False,"rotationStyle":"don't rotate"}
 
