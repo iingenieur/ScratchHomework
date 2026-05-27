@@ -52,6 +52,30 @@ class BB:
     def change_y(self,v): return self._add("motion_changeyby",inputs={"DY":[1,[4,str(v)]]})
     def change_y_var(self,n,i):
         vr=self.var_ref(n,i);b=self._add("motion_changeyby",inputs={"DY":[3,vr,[4,"0"]]});self._p(vr,b);return b
+    def change_x_var(self,n,i):
+        vr=self.var_ref(n,i);b=self._add("motion_changexby",inputs={"DX":[3,vr,[4,"0"]]});self._p(vr,b);return b
+    def xpos(self): return self._add("motion_xposition")
+    def op_sub(self,a,b2):
+        b=self._add("operator_subtract",inputs={"NUM1":[3,a,[10,""]],"NUM2":[3,b2,[10,""]]});self._p(a,b);self._p(b2,b);return b
+    def set_var_block(self,n,i,src):
+        b=self._add("data_setvariableto",fields={"VARIABLE":[n,i]},inputs={"VALUE":[3,src,[10,""]]});self._p(src,b);return b
+    def sense_of_xpos(self,sprite_name):
+        om=self._add("sensing_of_object_menu",fields={"OBJECT":[sprite_name,None]},shadow=True)
+        b=self._add("sensing_of",fields={"PROPERTY":["x position",None]},inputs={"OBJECT":[1,om]})
+        self._p(om,b);return b
+    def sense_of_ypos(self,sprite_name):
+        om=self._add("sensing_of_object_menu",fields={"OBJECT":[sprite_name,None]},shadow=True)
+        b=self._add("sensing_of",fields={"PROPERTY":["y position",None]},inputs={"OBJECT":[1,om]})
+        self._p(om,b);return b
+    def ypos(self): return self._add("motion_yposition")
+    def op_gt_block(self,a,b2):
+        b=self._add("operator_gt",inputs={"OPERAND1":[3,a,[10,""]],"OPERAND2":[3,b2,[10,""]]});self._p(a,b);self._p(b2,b);return b
+    def op_add_block_const(self,src,const):
+        b=self._add("operator_add",inputs={"NUM1":[3,src,[10,""]],"NUM2":[1,[10,str(const)]]});self._p(src,b);return b
+    def op_or(self,a,b2):
+        b=self._add("operator_or",inputs={"OPERAND1":[2,a],"OPERAND2":[2,b2]});self._p(a,b);self._p(b2,b);return b
+    def set_y_block(self,src):
+        b=self._add("motion_sety",inputs={"Y":[3,src,[4,"0"]]});self._p(src,b);return b
     def move(self,s): return self._add("motion_movesteps",inputs={"STEPS":[1,[4,str(s)]]})
     def point_dir(self,d): return self._add("motion_pointindirection",inputs={"DIRECTION":[1,[4,str(d)]]})
     def show(self): return self._add("looks_show")
@@ -154,6 +178,59 @@ def svg_turtle():
 
 def svg_shell():
     return svg(26, 20, '<ellipse cx="13" cy="10" rx="12" ry="9" fill="#2E7D32" stroke="#1B5E20" stroke-width="1"/><ellipse cx="13" cy="8" rx="8" ry="6" fill="#4CAF50"/><line x1="7" y1="6" x2="7" y2="14" stroke="#1B5E20" stroke-width="1"/><line x1="13" y1="4" x2="13" y2="14" stroke="#1B5E20" stroke-width="1"/><line x1="19" y1="6" x2="19" y2="14" stroke="#1B5E20" stroke-width="1"/><ellipse cx="13" cy="15" rx="10" ry="4" fill="#FFCC02"/>')
+
+def svg_spiky_turtle():
+    # 일반 거북이 위에 가시(▲▲▲) 추가
+    return svg(30, 32,
+        '<polygon points="6,4 8,0 10,4" fill="#37474F"/>'
+        '<polygon points="13,3 15,-1 17,3" fill="#37474F"/>'
+        '<polygon points="20,4 22,0 24,4" fill="#37474F"/>'
+        '<ellipse cx="15" cy="16" rx="13" ry="12" fill="#5D4037"/>'
+        '<ellipse cx="15" cy="14" rx="9" ry="8" fill="#8D6E63"/>'
+        '<circle cx="7" cy="16" r="6" fill="#FFCC80"/>'
+        '<circle cx="5" cy="14" r="2" fill="#FFF"/>'
+        '<circle cx="5" cy="14" r="1" fill="#000"/>'
+        '<ellipse cx="10" cy="28" rx="4" ry="3" fill="#FFCC80"/>'
+        '<ellipse cx="20" cy="28" rx="4" ry="3" fill="#FFCC80"/>'
+    )
+
+def svg_question_block():
+    return svg(30, 30,
+        '<rect x="1" y="1" width="28" height="28" rx="2" fill="#FFB300" stroke="#E65100" stroke-width="2"/>'
+        '<rect x="3" y="3" width="24" height="24" rx="1" fill="#FFC107"/>'
+        '<text x="15" y="22" text-anchor="middle" font-size="20" font-weight="bold" fill="#4E342E">?</text>'
+        '<circle cx="6" cy="6" r="1.5" fill="#FFE082"/>'
+        '<circle cx="24" cy="6" r="1.5" fill="#FFE082"/>'
+        '<circle cx="6" cy="24" r="1.5" fill="#FFE082"/>'
+        '<circle cx="24" cy="24" r="1.5" fill="#FFE082"/>'
+    )
+
+def svg_empty_block():
+    return svg(30, 30,
+        '<rect x="1" y="1" width="28" height="28" rx="2" fill="#757575" stroke="#424242" stroke-width="2"/>'
+        '<rect x="3" y="3" width="24" height="24" rx="1" fill="#9E9E9E"/>'
+        '<circle cx="6" cy="6" r="1.5" fill="#BDBDBD"/>'
+        '<circle cx="24" cy="6" r="1.5" fill="#BDBDBD"/>'
+        '<circle cx="6" cy="24" r="1.5" fill="#BDBDBD"/>'
+        '<circle cx="24" cy="24" r="1.5" fill="#BDBDBD"/>'
+    )
+
+def svg_fire_flower():
+    # 빨강+노랑 꽃잎 + 초록 줄기
+    return svg(24, 28,
+        '<rect x="11" y="14" width="2" height="14" fill="#2E7D32"/>'
+        '<ellipse cx="8" cy="20" rx="4" ry="2" fill="#388E3C"/>'
+        '<ellipse cx="16" cy="22" rx="4" ry="2" fill="#388E3C"/>'
+        '<circle cx="12" cy="9" r="7" fill="#FFFFFF"/>'
+        '<circle cx="12" cy="6" r="4" fill="#E53935"/>'
+        '<circle cx="6" cy="11" r="4" fill="#E53935"/>'
+        '<circle cx="18" cy="11" r="4" fill="#E53935"/>'
+        '<circle cx="9" cy="14" r="3.5" fill="#FB8C00"/>'
+        '<circle cx="15" cy="14" r="3.5" fill="#FB8C00"/>'
+        '<circle cx="12" cy="10" r="3" fill="#FFEB3B"/>'
+        '<circle cx="10" cy="9" r="0.8" fill="#000"/>'
+        '<circle cx="14" cy="9" r="0.8" fill="#000"/>'
+    )
 
 def svg_fireball():
     return svg(16, 16, '<circle cx="8" cy="8" r="7" fill="#FF6600"/><circle cx="8" cy="8" r="4" fill="#FFCC00"/><circle cx="8" cy="8" r="2" fill="#FFF"/>')

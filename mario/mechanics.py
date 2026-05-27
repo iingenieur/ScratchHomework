@@ -374,6 +374,72 @@ def mario_flag_clear(m, V, flag_name="Flag",
     return m.if_then(tfl, s_clear[0])
 
 
+def mario_spiky_hit(m, V, enemy_name, BR=None, knockback=30,
+                    hit_sound="Hit", reset_costume=None):
+    """가시 적과의 충돌: 어떤 속도/상태든 무조건 피격.
+
+    낙하/점프/지상 모두 피격. mario_stomp 호출 안 함 (밟기 처치 불가).
+    무적 가드 적용.
+
+    Args:
+        m: BB 인스턴스
+        V: 변수 ID 딕셔너리 (하트, 속도Y, 점프중 필요, 무적 선택)
+        enemy_name: 적 스프라이트 이름
+        BR: 브로드캐스트 딕셔너리 ("피격" 키 있으면 발송)
+        knockback: 넉백 거리 (px, 현재 방향 반대로)
+        hit_sound: 피격 사운드 이름
+        reset_costume: 피격 후 전환할 코스튬
+
+    Returns:
+        if_hit 블록 ID
+    """
+    tt = m.touching(enemy_name)
+    cond = tt
+    if "무적" in V:
+        not_invincible = m.eq_var("무적", V["무적"], 0)
+        cond = m.op_and(tt, not_invincible)
+
+    hit = [m.change_var("하트", V["하트"], -1)]
+    if BR and "피격" in BR:
+        hit.append(m.broadcast("피격", BR["피격"]))
+    hit.append(m.play_sound(hit_sound))
+    hit.append(m.move(-knockback))
+    hit.append(m.set_var("속도Y", V["속도Y"], 0))
+    hit.append(m.set_var("점프중", V["점프중"], 0))
+    if reset_costume:
+        hit.append(m.costume(reset_costume))
+    m.chain(hit)
+    return m.if_then(cond, hit[0])
+
+
+def mario_pipe_clear(m, V, pipe_name="Pipe",
+                     clear_msg="다음 스테이지로!", msg_time=1):
+    """파이프 위에서 아래 방향키 → 스테이지 클리어.
+
+    마리오의 발이 파이프(`pipe_name`) 위에서 touching 상태이고 아래 방향키를
+    누르면 발동. 마리오는 say 메시지를 띄우고 백드롭이 "클리어"로 전환된다.
+
+    Args:
+        m: BB 인스턴스 (마리오)
+        V: 변수 딕셔너리 (게임상태 필요)
+        pipe_name: 파이프 sprite 이름
+        clear_msg: 진입 시 표시할 메시지
+        msg_time: 메시지 표시 시간 (초)
+
+    Returns:
+        if_clear 블록 ID
+    """
+    tp = m.touching(pipe_name)
+    down_key = m.key_pressed("down arrow")
+    cond = m.op_and(tp, down_key)
+    s_clear = [m.say_for(clear_msg, msg_time),
+               m.set_var("게임상태", V["게임상태"], "clear"),
+               m.backdrop("클리어"),
+               m.hide()]
+    m.chain(s_clear)
+    return m.if_then(cond, s_clear[0])
+
+
 def mario_invincibility(m, V, BR, duration=0.5):
     """피격 후 무적 시간 처리 (별도 스크립트)
 
