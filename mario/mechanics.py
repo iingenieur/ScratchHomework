@@ -298,13 +298,14 @@ def mario_gameover(m, V, hide_mario=False):
     return m.if_then(ch, die[0])
 
 
-def mario_platform_landing(m, V, plat_positions):
+def mario_platform_landing(m, V, plat_positions, reset_costume="걷기1"):
     """발판 착지 판정
 
     Args:
         m: BB 인스턴스
         V: 변수 ID 딕셔너리 (속도Y, 점프중 필요)
         plat_positions: [(name, x, y, sprite), ...] 발판 정보
+        reset_costume: 착지 시 전환할 코스튬 이름 (기본 "걷기1")
 
     Returns:
         [if_plat1, if_plat2, ...] 블록 ID 리스트
@@ -318,7 +319,7 @@ def mario_platform_landing(m, V, plat_positions):
         sn = [m.change_y(1),
               m.set_var("속도Y", V["속도Y"], 0),
               m.set_var("점프중", V["점프중"], 0),
-              m.costume("걷기1")]
+              m.costume(reset_costume)]
         m.chain(sn)
         checks.append(m.if_then(ca, sn[0]))
     return checks

@@ -76,6 +76,8 @@ class BB:
         b=self._add("operator_or",inputs={"OPERAND1":[2,a],"OPERAND2":[2,b2]});self._p(a,b);self._p(b2,b);return b
     def set_y_block(self,src):
         b=self._add("motion_sety",inputs={"Y":[3,src,[4,"0"]]});self._p(src,b);return b
+    def set_x_block(self,src):
+        b=self._add("motion_setx",inputs={"X":[3,src,[4,"0"]]});self._p(src,b);return b
     def move(self,s): return self._add("motion_movesteps",inputs={"STEPS":[1,[4,str(s)]]})
     def point_dir(self,d): return self._add("motion_pointindirection",inputs={"DIRECTION":[1,[4,str(d)]]})
     def show(self): return self._add("looks_show")
@@ -87,6 +89,8 @@ class BB:
     def set_size(self,p): return self._add("looks_setsizeto",inputs={"SIZE":[1,[4,str(p)]]})
     def next_costume(self): return self._add("looks_nextcostume")
     def goto_front(self): return self._add("looks_gotofrontback",fields={"FRONT_BACK":["front",None]})
+    def set_effect(self,effect,value):
+        return self._add("looks_seteffectto",fields={"EFFECT":[effect,None]},inputs={"VALUE":[1,[4,str(value)]]})
     def say(self,m): return self._add("looks_say",inputs={"MESSAGE":[1,[10,str(m)]]})
     def say_for(self,m,s): return self._add("looks_sayforsecs",inputs={"MESSAGE":[1,[10,str(m)]],"SECS":[1,[4,str(s)]]})
     def say_nothing(self): return self._add("looks_say",inputs={"MESSAGE":[1,[10,""]]})
@@ -97,6 +101,24 @@ class BB:
     def key_pressed(self,k):
         m=self._add("sensing_keyoptions",fields={"KEY_OPTION":[k,None]},shadow=True)
         b=self._add("sensing_keypressed",inputs={"KEY_OPTION":[1,m]});self._p(m,b);return b
+    def mouse_down(self): return self._add("sensing_mousedown")
+    def mouse_x(self): return self._add("sensing_mousex")
+    def mouse_y(self): return self._add("sensing_mousey")
+    def glide_block(self,secs,x_block,y_block):
+        b=self._add("motion_glidesecstoxy",inputs={"SECS":[1,[4,str(secs)]],"X":[3,x_block,[4,"0"]],"Y":[3,y_block,[4,"0"]]})
+        self._p(x_block,b);self._p(y_block,b);return b
+    def stage_clicked(self): return self._add("event_whenstageclicked", top=True)
+    def distance_to(self,sprite_name):
+        om=self._add("sensing_distancetomenu",fields={"DISTANCETOMENU":[sprite_name,None]},shadow=True)
+        b=self._add("sensing_distanceto",inputs={"DISTANCETOMENU":[1,om]});self._p(om,b);return b
+    def lt_block_const(self,src,const):
+        b=self._add("operator_lt",inputs={"OPERAND1":[3,src,[10,""]],"OPERAND2":[1,[10,str(const)]]});self._p(src,b);return b
+    def point_towards(self,target):
+        om=self._add("motion_pointtowards_menu",fields={"TOWARDS":[target,None]},shadow=True)
+        b=self._add("motion_pointtowards",inputs={"TOWARDS":[1,om]});self._p(om,b);return b
+    def stop_this(self): return self._add("control_stop",fields={"STOP_OPTION":["this script",None]},mutation={"tagName":"mutation","children":[],"hasnext":"false"})
+    def glide_xy(self,secs,x,y):
+        return self._add("motion_glidesecstoxy",inputs={"SECS":[1,[4,str(secs)]],"X":[1,[4,str(x)]],"Y":[1,[4,str(y)]]})
     def touching(self,n):
         m=self._add("sensing_touchingobjectmenu",fields={"TOUCHINGOBJECTMENU":[n,None]},shadow=True)
         b=self._add("sensing_touchingobject",inputs={"TOUCHINGOBJECTMENU":[1,m]});self._p(m,b);return b
@@ -116,6 +138,10 @@ class BB:
         yp=self._add("motion_yposition");b=self._add("operator_lt",inputs={"OPERAND1":[3,yp,[10,""]],"OPERAND2":[1,[10,str(v)]]});self._p(yp,b);return b
     def gt_ypos(self,v):
         yp=self._add("motion_yposition");b=self._add("operator_gt",inputs={"OPERAND1":[3,yp,[10,""]],"OPERAND2":[1,[10,str(v)]]});self._p(yp,b);return b
+    def lt_xpos(self,v):
+        xp=self._add("motion_xposition");b=self._add("operator_lt",inputs={"OPERAND1":[3,xp,[10,""]],"OPERAND2":[1,[10,str(v)]]});self._p(xp,b);return b
+    def gt_xpos(self,v):
+        xp=self._add("motion_xposition");b=self._add("operator_gt",inputs={"OPERAND1":[3,xp,[10,""]],"OPERAND2":[1,[10,str(v)]]});self._p(xp,b);return b
     def broadcast(self,n,i): return self._add("event_broadcast",inputs={"BROADCAST_INPUT":[1,[11,n,i]]})
     def broadcast_wait(self,n,i): return self._add("event_broadcastandwait",inputs={"BROADCAST_INPUT":[1,[11,n,i]]})
 
@@ -257,6 +283,18 @@ def svg_hearts(n):
         hearts+=f'<path d="M{x+10},{8} C{x+10},4 {x+4},2 {x+4},6 C{x+4},4 {x},6 {x+4},12 L{x+10},18 L{x+16},12 C{x+20},6 {x+16},4 {x+16},6 C{x+16},2 {x+10},4 {x+10},8 Z" fill="{c}"/>'
     return svg(112, 20, hearts)
 
+def svg_dark_hearts(n, total=10, per_row=5):
+    # 5 per row, 2 rows = 10 hearts. 각 하트 22x20.
+    hearts=""
+    for i in range(total):
+        c="#111" if i<n else "#888"
+        col = i % per_row
+        row = i // per_row
+        x = col * 22 + 2
+        y = row * 22
+        hearts+=f'<path d="M{x+10},{y+8} C{x+10},{y+4} {x+4},{y+2} {x+4},{y+6} C{x+4},{y+4} {x},{y+6} {x+4},{y+12} L{x+10},{y+18} L{x+16},{y+12} C{x+20},{y+6} {x+16},{y+4} {x+16},{y+6} C{x+16},{y+2} {x+10},{y+4} {x+10},{y+8} Z" fill="{c}"/>'
+    return svg(per_row * 22 + 4, ((total + per_row - 1) // per_row) * 22 + 2, hearts)
+
 
 # ==================== Backdrops ====================
 def bg_intro():
@@ -287,8 +325,10 @@ def make_ground(am):
         "sounds":[],"volume":100,"layerOrder":1,"visible":True,
         "x":0,"y":GY-15,"size":100,"direction":90,"draggable":False,"rotationStyle":"don't rotate"}
 
-def make_hearts(am, V, BR=None, end_backdrops=("게임오버", "클리어", "승리")):
-    """하트 표시 스프라이트 생성 (피격 브로드캐스트로 코스튬 전환)"""
+def make_hearts(am, V, BR=None, end_backdrops=("게임오버", "클리어", "승리"),
+                restart_br_key="스테이지1"):
+    """하트 표시 스프라이트 생성 (피격 브로드캐스트로 코스튬 전환).
+    restart_br_key: 게임 재시작 broadcast 키 (Stage 1=스테이지1, Stage 3=스테이지3 등)"""
     ht = BB()
     # 초기화: 5개 하트 표시
     htf = ht.flag()
@@ -297,10 +337,10 @@ def make_hearts(am, V, BR=None, end_backdrops=("게임오버", "클리어", "승
     if BR and "피격" in BR:
         hth = ht.bcast_hat("피격", BR["피격"])
         ht.chain([hth, ht.next_costume()])
-    # 게임 재시작 시 하트 풀 복구
-    if BR and "스테이지1" in BR:
-        htr = ht.bcast_hat("스테이지1", BR["스테이지1"])
-        ht.chain([htr, ht.costume("h5")])
+    # 게임 (재)시작 시 하트 풀 복구 + 다시 show
+    if BR and restart_br_key in BR:
+        htr = ht.bcast_hat(restart_br_key, BR[restart_br_key])
+        ht.chain([htr, ht.costume("h5"), ht.show()])
     # 종료 백드롭 전환 시 hide
     for bd in end_backdrops:
         hb = ht.backdrop_hat(bd)
