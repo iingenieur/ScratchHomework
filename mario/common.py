@@ -67,6 +67,10 @@ class BB:
         om=self._add("sensing_of_object_menu",fields={"OBJECT":[sprite_name,None]},shadow=True)
         b=self._add("sensing_of",fields={"PROPERTY":["y position",None]},inputs={"OBJECT":[1,om]})
         self._p(om,b);return b
+    def sense_of_direction(self,sprite_name):
+        om=self._add("sensing_of_object_menu",fields={"OBJECT":[sprite_name,None]},shadow=True)
+        b=self._add("sensing_of",fields={"PROPERTY":["direction",None]},inputs={"OBJECT":[1,om]})
+        self._p(om,b);return b
     def ypos(self): return self._add("motion_yposition")
     def op_gt_block(self,a,b2):
         b=self._add("operator_gt",inputs={"OPERAND1":[3,a,[10,""]],"OPERAND2":[3,b2,[10,""]]});self._p(a,b);self._p(b2,b);return b
@@ -80,6 +84,8 @@ class BB:
         b=self._add("motion_setx",inputs={"X":[3,src,[4,"0"]]});self._p(src,b);return b
     def move(self,s): return self._add("motion_movesteps",inputs={"STEPS":[1,[4,str(s)]]})
     def point_dir(self,d): return self._add("motion_pointindirection",inputs={"DIRECTION":[1,[4,str(d)]]})
+    def point_in_direction_block(self,src):
+        b=self._add("motion_pointindirection",inputs={"DIRECTION":[3,src,[4,"0"]]});self._p(src,b);return b
     def show(self): return self._add("looks_show")
     def hide(self): return self._add("looks_hide")
     def costume(self,n): return self._add("looks_switchcostumeto",inputs={"COSTUME":[1,[10,n]]})

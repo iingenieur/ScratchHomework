@@ -53,3 +53,13 @@
 ## 기존 컨셉 유지
 - 쿠파 좌우 패트롤
 - 파이어볼로 쿠파 HP 0 → 피치 등장 → "고마워요 마리오!" → 클리어
+
+## 쿠파 파이어볼 (BowserFireball)
+- size=5, 시작 x=쿠파x−25, y=−90(고정), point_dir(−90)
+- 쿠파의 "덤벼라 마리오!" 멘트 후 1초 대기 → 첫 발사. 이후 3초 간격으로 쿠파HP>0인 동안 반복
+- 쿠파 발사 모션: 걷기5 costume → 0.3초 wait → 걷기4 복귀
+- **활성 게이트**: 변수 `파이어볼활성` (0/1). setup에서 1, hide(touching/edge/게임상태변경) 시 0. 비활성 시 잘못된 distance 발동을 막음.
+- 마리오/화이트마리오 hit: `파이어볼활성==1 AND distance<80 AND 무적==0 AND 마리오 y<-120` → 하트 −1, 피격 broadcast(무적), 넉백 move(-30), 속도Y/점프중 리셋
+  - hit substack 끝에 즉시 게임오버 fallback: 하트<1이면 그 자리에서 게임상태=gameover + backdrop("게임오버") (mario_gameover와 중복이지만 forever loop frame loss 대비 안전망)
+  - dy≈43(평지 -133, 파이어볼 -90)이라 distance threshold 80으로 평지에서도 확실히 발동
+  - **회피 방법**: 점프(y가 -120 위로 올라감) 또는 블록 위 서기(파이프/벽돌/QBlock)로 둘 다 회피 가능

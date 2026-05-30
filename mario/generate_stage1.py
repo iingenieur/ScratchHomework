@@ -20,14 +20,14 @@ MARIO_START_X = -200
 MARIO_START_Y = GY + 7
 
 PLAT_POSITIONS = [
-    ("Plat1", -160, -80, "background/plat_3.png"),
+    ("Plat1", -145, -80, "background/plat_3.png"),
     ("Plat2",  -40, -30, "background/plat_3.png"),
     ("Plat3",   80,  20, "background/plat_3.png"),
     ("Plat4",  200,  70, "background/plat_3.png"),
 ]
 
 TURTLE_PATROLS = [
-    ("Turtle1", 220, -220, GY + 8, 4.0),
+    ("Turtle1", 220, -220, -133, 4.0),
     ("Turtle2", -70,  -10, -7, 1.5),
 ]
 
@@ -217,16 +217,16 @@ def make_flag(am, BR, sounds):
     flf = fl.flag()
     fl.chain([flf, fl.hide()])
     flh = fl.bcast_hat("스테이지1", BR["스테이지1"])
-    fl.chain([flh, fl.goto(223, 132), fl.show()])
+    fl.chain([flh, fl.goto(213, 94), fl.set_size(6), fl.point_dir(-90), fl.show()])
     hide_on_end(fl)
     return {
         "isStage": False, "name": "Flag",
         "variables": {}, "lists": {}, "broadcasts": {}, "comments": {},
         "blocks": fl.blocks, "currentCostume": 0,
-        "costumes": [am.reg("flag", svg_flag(), 10, 25)],
+        "costumes": [am.reg_png("flag", "background/flag_mario.png")],
         "sounds": sounds, "volume": 100, "layerOrder": 3, "visible": False,
-        "x": 223, "y": 132, "size": 150, "direction": 90,
-        "draggable": False, "rotationStyle": "don't rotate",
+        "x": 213, "y": 94, "size": 6, "direction": -90,
+        "draggable": False, "rotationStyle": "left-right",
     }
 
 
@@ -242,7 +242,7 @@ def make_turtle(am, name, x1, x2, y, speed, stomp_br_name, stomp_br_id, BR):
     face_left = 90
     face_right = -90
     start_face = face_left if x2 < x1 else face_right
-    ti = [t.costume("koopa"), t.goto(x1, y), t.set_size(45), t.point_dir(start_face), t.show()]
+    ti = [t.costume("walk1"), t.goto(x1, y), t.set_size(45), t.point_dir(start_face), t.show()]
 
     first_go = t.glide(speed, x2, y)
     turn_back = t.point_dir(face_right if x2 < x1 else face_left)
@@ -253,10 +253,21 @@ def make_turtle(am, name, x1, x2, y, speed, stomp_br_name, stomp_br_id, BR):
     tfl = t.forever(turn_back)
     t.chain([th] + ti + [first_go, tfl])
 
+    # walking 애니메이션 — 별도 thread로 코스튬 walk1~4 무한 cycle
+    th_anim = t.bcast_hat("스테이지1", BR["스테이지1"])
+    cycle_chain = []
+    for i in [1, 2, 3, 4]:
+        cycle_chain += [t.costume(f"walk{i}"), t.wait(0.15)]
+    t.chain(cycle_chain)
+    walk_forever = t.forever(cycle_chain[0])
+    t.chain([th_anim, walk_forever])
+
     tsh = t.bcast_hat(stomp_br_name, stomp_br_id)
     stomp_response = [t.stop_other(), t.costume("shell"), t.goto_front()]
-    if name == "Turtle2":
-        stomp_response.append(t.set_y(-7))
+    if name == "Turtle1":
+        stomp_response.append(t.set_y(-123))
+    elif name == "Turtle2":
+        stomp_response.append(t.set_y(3))
     stomp_response += [t.wait(2), t.hide()]
     t.chain([tsh] + stomp_response)
 
@@ -267,7 +278,10 @@ def make_turtle(am, name, x1, x2, y, speed, stomp_br_name, stomp_br_id, BR):
         "variables": {}, "lists": {}, "broadcasts": {}, "comments": {},
         "blocks": t.blocks, "currentCostume": 0,
         "costumes": [
-            am.reg_png("koopa", "turtle/koopa_walk_1.png"),
+            am.reg_png("walk1", "turtle/koopa_walk_1.png"),
+            am.reg_png("walk2", "turtle/koopa_walk_2.png"),
+            am.reg_png("walk3", "turtle/koopa_walk_3.png"),
+            am.reg_png("walk4", "turtle/koopa_walk_4.png"),
             am.reg("shell", svg_shell_large(), 30, 20),
         ],
         "sounds": [], "volume": 100, "layerOrder": 4, "visible": False,

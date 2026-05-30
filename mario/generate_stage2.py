@@ -44,9 +44,10 @@ PLAT_POSITIONS_PHYS = PLAT_POSITIONS + [
 
 NORMAL_TURTLES = [
     # name, x1, x2, y, speed
-    ("Turtle1", -100, -220, GY + 8, 4.0),
+    ("Turtle1", -100, -220, -133, 4.0),
+    ("Turtle2", 12, 224, -133, 4.0),
 ]
-NORMAL_TURTLE_NAMES = ["Turtle1"]
+NORMAL_TURTLE_NAMES = ["Turtle1", "Turtle2"]
 
 
 def svg_shell_large():
@@ -226,6 +227,55 @@ def make_moving_plat(am, name, x1, y1, x2, y2, speed, sprite, BR, stage_bcast,
 
 
 # ════════════════════════════════════════════════════════════════════════
+# 굼바 (Plat3 위에서 좌우 patrol, 위에서 밟으면 squish)
+# ════════════════════════════════════════════════════════════════════════
+def make_goomba(am, BR, stage_bcast):
+    """Plat3 위(-65, 50) 좌우 patrol. walk 2-frame cycle로 걷는 모션."""
+    g = BB()
+    gf = g.flag()
+    g.chain([gf, g.hide()])
+    gh = g.bcast_hat(stage_bcast, BR[stage_bcast])
+    # Plat3 위. plat 폭 따라 patrol 범위.
+    x1, x2, gy = -90, -40, 69
+    gi = [g.costume("walk1"), g.goto(x1, gy), g.set_size(40),
+          g.point_dir(90), g.show()]
+    first_go = g.glide(2, x2, gy)
+    turn_back = g.point_dir(-90)
+    go_back = g.glide(2, x1, gy)
+    turn_fwd = g.point_dir(90)
+    go_fwd = g.glide(2, x2, gy)
+    g.chain([turn_back, go_back, turn_fwd, go_fwd])
+    gfl = g.forever(turn_back)
+    g.chain([gh] + gi + [first_go, gfl])
+
+    # walking 애니메이션 — 별도 thread로 walk1↔walk2 cycle
+    gh_anim = g.bcast_hat(stage_bcast, BR[stage_bcast])
+    cycle = [g.costume("walk1"), g.wait(0.2),
+             g.costume("walk2"), g.wait(0.2)]
+    g.chain(cycle)
+    walk_forever = g.forever(cycle[0])
+    g.chain([gh_anim, walk_forever])
+
+    # 밟혔을 때
+    gsh = g.bcast_hat("굼바밟기", BR["굼바밟기"])
+    squish = [g.stop_other(), g.costume("squish"), g.set_y(70),
+              g.wait(2), g.hide()]
+    g.chain([gsh] + squish)
+    hide_on_end(g)
+    return {
+        "isStage": False, "name": "Goomba",
+        "variables": {}, "lists": {}, "broadcasts": {}, "comments": {},
+        "blocks": g.blocks, "currentCostume": 0,
+        "costumes": [am.reg_png("walk1", "enemies/goomba/goomba_001.png"),
+                     am.reg_png("walk2", "enemies/goomba/goomba_002.png"),
+                     am.reg_png("squish", "enemies/goomba/goomba_082.png")],
+        "sounds": [], "volume": 100, "layerOrder": 5, "visible": False,
+        "x": x1, "y": gy, "size": 40, "direction": 90,
+        "draggable": False, "rotationStyle": "left-right",
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════
 # 일반 거북이 (Stage 1 패턴 — 밟기로 등껍질)
 # ════════════════════════════════════════════════════════════════════════
 def make_normal_turtle(am, name, x1, x2, y, speed, stomp_br_name, stomp_br_id,
@@ -237,7 +287,7 @@ def make_normal_turtle(am, name, x1, x2, y, speed, stomp_br_name, stomp_br_id,
     face_left = 90
     face_right = -90
     start_face = face_left if x2 < x1 else face_right
-    ti = [t.costume("koopa"), t.goto(x1, y), t.set_size(45),
+    ti = [t.costume("walk1"), t.goto(x1, y), t.set_size(45),
           t.point_dir(start_face), t.show()]
     first_go = t.glide(speed, x2, y)
     turn_back = t.point_dir(face_right if x2 < x1 else face_left)
@@ -248,8 +298,18 @@ def make_normal_turtle(am, name, x1, x2, y, speed, stomp_br_name, stomp_br_id,
     tfl = t.forever(turn_back)
     t.chain([th] + ti + [first_go, tfl])
 
+    # walking 애니메이션 — 별도 thread로 코스튬 walk1~4 무한 cycle
+    th_anim = t.bcast_hat(stage_bcast, BR[stage_bcast])
+    cycle_chain = []
+    for i in [1, 2, 3, 4]:
+        cycle_chain += [t.costume(f"walk{i}"), t.wait(0.15)]
+    t.chain(cycle_chain)
+    walk_forever = t.forever(cycle_chain[0])
+    t.chain([th_anim, walk_forever])
+
     tsh = t.bcast_hat(stomp_br_name, stomp_br_id)
     stomp_response = [t.stop_other(), t.costume("shell"), t.goto_front(),
+                      t.set_y(-124),
                       t.wait(2), t.hide()]
     t.chain([tsh] + stomp_response)
 
@@ -258,7 +318,10 @@ def make_normal_turtle(am, name, x1, x2, y, speed, stomp_br_name, stomp_br_id,
         "isStage": False, "name": name,
         "variables": {}, "lists": {}, "broadcasts": {}, "comments": {},
         "blocks": t.blocks, "currentCostume": 0,
-        "costumes": [am.reg_png("koopa", "turtle/koopa_walk_1.png"),
+        "costumes": [am.reg_png("walk1", "turtle/koopa_walk_1.png"),
+                     am.reg_png("walk2", "turtle/koopa_walk_2.png"),
+                     am.reg_png("walk3", "turtle/koopa_walk_3.png"),
+                     am.reg_png("walk4", "turtle/koopa_walk_4.png"),
                      am.reg("shell", svg_shell_large(), 30, 20)],
         "sounds": [], "volume": 100, "layerOrder": 4, "visible": False,
         "x": x1, "y": y, "size": 45, "direction": 90,
@@ -274,7 +337,7 @@ def make_pipe(am, BR, sounds, stage_bcast):
     pf = p.flag()
     p.chain([pf, p.hide()])
     ph = p.bcast_hat(stage_bcast, BR[stage_bcast])
-    p.chain([ph, p.goto(210, 55), p.set_size(15), p.show()])
+    p.chain([ph, p.goto(210, 54), p.set_size(15), p.show()])
     hide_on_end(p)
     return {
         "isStage": False, "name": "Pipe",
@@ -282,7 +345,7 @@ def make_pipe(am, BR, sounds, stage_bcast):
         "blocks": p.blocks, "currentCostume": 0,
         "costumes": [am.reg_png("pipe", "background/pipe_green.png")],
         "sounds": sounds, "volume": 100, "layerOrder": 3, "visible": False,
-        "x": 210, "y": 55, "size": 15, "direction": 90,
+        "x": 210, "y": 54, "size": 15, "direction": 90,
         "draggable": False, "rotationStyle": "don't rotate",
     }
 
@@ -353,6 +416,12 @@ def build_mario(am, V, BR, sounds, stage_bcast):
     normal_hit_blocks = [mario_side_hit(m, V, tn, BR=BR, knockback=30,
                                         reset_costume="걷기1")
                          for tn in NORMAL_TURTLE_NAMES]
+    # 굼바: 위에서 밟으면 squish, 옆은 hit
+    goomba_stomp = mario_stomp(m, V, "Goomba", "굼바밟기", BR["굼바밟기"])
+    goomba_hit = mario_side_hit(m, V, "Goomba", BR=BR, knockback=30,
+                                reset_costume="걷기1")
+    stomp_blocks.append(goomba_stomp)
+    normal_hit_blocks.append(goomba_hit)
 
     gameover_block = mario_gameover(m, V, hide_mario=True)
     clear_block = mario_pipe_clear(m, V, pipe_name="Pipe",
@@ -398,7 +467,7 @@ def build():
     am = AssetManager()
 
     stage_bcast = "스테이지2"
-    br_keys = [stage_bcast, "피격"]
+    br_keys = [stage_bcast, "피격", "굼바밟기"]
     for tn in NORMAL_TURTLE_NAMES:
         br_keys.append(f"밟기_{tn}")
     BR = {k: uid() for k in br_keys}
@@ -426,13 +495,14 @@ def build():
         for n, x1, x2, y, sp in NORMAL_TURTLES
     ]
     pipe_sprite = make_pipe(am, BR, [snd_win], stage_bcast)
+    goomba_sprite = make_goomba(am, BR, stage_bcast)
     mario_sprite = build_mario(am, V, BR, [snd_jump, snd_hit, snd_win],
                                stage_bcast)
-    hearts = make_hearts(am, V, BR)
+    hearts = make_hearts(am, V, BR, restart_br_key="스테이지2")
 
     project = {
         "targets": [stage_target, *platforms, *moving_platforms, pipe_sprite,
-                    *normal_turtles, mario_sprite, hearts],
+                    goomba_sprite, *normal_turtles, mario_sprite, hearts],
         "monitors": [], "extensions": [],
         "meta": {"semver": "3.0.0", "vm": "0.2.0",
                  "agent": "stage2-generator"},

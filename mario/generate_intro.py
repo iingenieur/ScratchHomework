@@ -34,7 +34,7 @@ def bg_intro_end():
         '<rect x="0" y="280" width="480" height="80" fill="#4CAF50"/>'
         '<rect x="0" y="310" width="480" height="50" fill="#8B4513"/>'
         '<text x="240" y="160" text-anchor="middle" font-size="40" font-weight="bold" fill="#1565C0">인트로 끝!</text>'
-        '<text x="240" y="220" text-anchor="middle" font-size="16" fill="#333">SPACE 키를 눌러 다시 보기</text>'
+        ''
         '</svg>'
     )
 
@@ -42,7 +42,7 @@ def bg_intro_end():
 def build():
     am = AssetManager()
 
-    BR = {k: uid() for k in ["인트로", "인트로끝", "리셋"]}
+    BR = {k: uid() for k in ["인트로", "인트로끝", "리셋", "carry"]}
     V  = {k: uid() for k in ["게임상태"]}
 
     gvars = {V["게임상태"]: ["게임상태", "start"]}
@@ -197,12 +197,17 @@ def build():
     p.chain([pf, p.hide()])
 
     ph = p.bcast_hat("인트로", BR["인트로"])
-    # Peach starts together with Mario, walks a bit further ahead
-    # Peach glide 1.5s to match Mario walk (~1.5s with overhead)
+    # Mario와 같은 step/timing(10 step × 17, 0.12s)으로 나란히 걷기.
+    # Peach 시작 -145 (Mario -180과 35px 차이) → 끝 25.
     pi = [
-        p.goto(-180, GY), p.set_size(70), p.show(),
-        p.point_dir(90),
-        p.glide(1.5, 30, GY),                          # walk right (1.5s to match mario)
+        p.goto(-145, GY), p.set_size(70), p.show(),
+        p.point_dir(90), p.costume("walk1"),
+    ]
+    for i in range(WALK_STEPS):
+        pi += [p.change_x(17), p.costume(f"walk{(i % 7) + 1}"), p.wait(STEP_DELAY)]
+    pi += [
+        p.goto(25, GY),
+        p.costume("peach"),                             # 멘트 칠 때 정지 자세
         p.wait(2),                                      # mario says (2s)
         p.wait(0.3),                                    # gap after mario's bubble gone
         p.say_for("네, 정말 좋아요!", 2),                # peach responds
@@ -210,17 +215,23 @@ def build():
         p.wait(1),                                      # bowser arrives
         p.say_for("으악! 쿠파!!", 1),                    # peach reacts
         p.say_nothing(),
-        p.wait(2),                                      # bowser talks
-        p.glide(1.5, 250, 200),                         # carried away RIGHT
-        p.hide(),
+        # carry는 별도 broadcast hat이 처리(쿠파와 동기) → 멘트 후 그 자리에 머무름.
     ]
     p.chain([ph] + pi)
+
+    # broadcast "carry"를 받으면 즉시 bowser 옆으로 이동 + 함께 우상단으로 glide → hide.
+    ph_carry = p.bcast_hat("carry", BR["carry"])
+    p.chain([ph_carry,
+             p.goto(30, GY),                            # bowser(80) 옆 50px (sprite 폭 만큼 떨어짐)
+             p.glide(1.5, 230, 200),                    # bowser(280)와 50px 평행 유지
+             p.hide()])
 
     peach = {
         "isStage": False, "name": "Peach",
         "variables": {}, "lists": {}, "broadcasts": {}, "comments": {},
         "blocks": p.blocks, "currentCostume": 0,
-        "costumes": [am.reg_png("피치", "peach/peach_idle.png")],
+        "costumes": [am.reg_png("peach", "peach/peach_idle.png")]
+                    + [am.reg_png(f"walk{i+1}", f"peach/peach_walk_{i+1}.png") for i in range(7)],
         "sounds": [], "volume": 100, "layerOrder": 7,
         "visible": False, "x": -180, "y": GY, "size": 70,
         "direction": 90, "draggable": False, "rotationStyle": "left-right",
@@ -233,12 +244,14 @@ def build():
 
     bwh = bw.bcast_hat("인트로", BR["인트로"])
     bwi = [
-        bw.goto(250, 200), bw.set_size(100), bw.show(),
+        bw.goto(250, 200), bw.set_size(100),
         bw.wait(5.8),                                  # wait for walk+conversation
-        bw.glide(1, 80, GY),                           # land RIGHT of peach
-        bw.wait(1),                                    # 6.2-7.2s (peach reacts)
-        bw.say_for("하하하! 피치는 내꺼다!", 2),        # 7.2-9.2s
-        bw.glide(1.5, 250, 200),                       # 9.2-10.7s: fly away RIGHT with peach
+        bw.show(),                                      # show 직전에만 등장 (시작 시 안 보임)
+        bw.glide(1, 70, GY),                           # peach(25) 우측 45px에 land (겹치지 않음)
+        bw.wait(1.5),                                  # peach가 "으악!" 다 말할 때까지 대기 (말풍선 겹침 방지)
+        bw.say_for("하하하! 피치는 내꺼다!", 2),        # peach 멘트 후 bowser 단독 멘트
+        bw.broadcast("carry", BR["carry"]),            # peach와 동기화 시작 신호
+        bw.glide(1.5, 270, 200),                       # carry-away — peach(230)와 40px 평행 유지 (동일 거리)
         bw.hide(),
     ]
     bw.chain([bwh] + bwi)
