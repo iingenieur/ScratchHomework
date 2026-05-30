@@ -34,6 +34,7 @@ import os
 import shutil
 import sys
 import tempfile
+import uuid
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -52,12 +53,245 @@ OUTPUT = REPO_ROOT / "MarioGame.sb3"
 SPRITE_NAME_FIELDS = {
     "sensing_touchingobjectmenu": "TOUCHINGOBJECTMENU",
     "sensing_distancetomenu": "DISTANCETOMENU",
+    "sensing_of_object_menu": "OBJECT",       # sense_of_xpos/ypos 등 cross-sprite property
     "motion_pointtowards_menu": "TOWARDS",
     "motion_goto_menu": "TO",
     "motion_glideto_menu": "TO",
     "control_create_clone_of_menu": "CLONE_OPTION",
     "looks_gotofrontback": None,  # no sprite ref; uses FRONT_BACK
 }
+
+# Opcodes whose `fields.BACKDROP = [backdrop_name, None]` we want to rename.
+BACKDROP_NAME_OPCODES = {
+    "looks_backdrops",                  # menu under looks_switchbackdropto / looks_switchbackdroptoandwait
+    "event_whenbackdropswitchesto",     # hat block field
+}
+
+
+def _new_id() -> str:
+    return uuid.uuid4().hex[:20]
+
+
+def hide_non_intro_sprites_at_start(sprites: list[dict[str, Any]]) -> int:
+    """Set visible=false on every sprite that isn't an intro_ sprite.
+    Each non-intro sprite must wait for its stage's broadcast hat to show()."""
+    count = 0
+    for sp in sprites:
+        if sp["name"].startswith("intro_"):
+            continue
+        sp["visible"] = False
+        count += 1
+    return count
+
+
+def add_intro_hide_hats(sprites: list[dict[str, Any]], end_backdrop_name: str) -> int:
+    """For every intro_ sprite, append `when backdrop switches to <end> → hide`.
+    This clears the intro cast before the player presses space to enter stage1."""
+    count = 0
+    for sp in sprites:
+        if not sp["name"].startswith("intro_"):
+            continue
+        blocks = sp.setdefault("blocks", {})
+        hat_id = _new_id()
+        hide_id = _new_id()
+        blocks[hat_id] = {
+            "opcode": "event_whenbackdropswitchesto",
+            "next": hide_id,
+            "parent": None,
+            "inputs": {},
+            "fields": {"BACKDROP": [end_backdrop_name, None]},
+            "shadow": False,
+            "topLevel": True,
+            "x": 50,
+            "y": 600,
+        }
+        blocks[hide_id] = {
+            "opcode": "looks_hide",
+            "next": None,
+            "parent": hat_id,
+            "inputs": {},
+            "fields": {},
+            "shadow": False,
+            "topLevel": False,
+        }
+        count += 1
+    return count
+
+
+def add_transition_space_hat(
+    stage: dict[str, Any],
+    from_backdrop_name: str,
+    set_var_name: str,
+    set_var_value: str,
+    to_backdrop_name: str,
+    broadcast_name: str,
+) -> None:
+    """Add to the stage:
+        when space pressed:
+            if (current backdrop name == from_backdrop_name):
+                set [var_name] to "set_var_value"
+                switch backdrop to "to_backdrop_name"
+                broadcast "broadcast_name"
+    Looks up variable ID and broadcast ID from the stage's unified maps.
+    """
+    # Resolve variable id
+    var_id = None
+    for vid, vdef in stage["variables"].items():
+        if vdef[0] == set_var_name:
+            var_id = vid
+            break
+    if var_id is None:
+        raise KeyError(f"Variable {set_var_name!r} not found in stage")
+
+    # Resolve broadcast id
+    br_id = None
+    for bid, bname in stage["broadcasts"].items():
+        if bname == broadcast_name:
+            br_id = bid
+            break
+    if br_id is None:
+        raise KeyError(f"Broadcast {broadcast_name!r} not found in stage")
+
+    blocks = stage["blocks"]
+    hat_id = _new_id()
+    if_id = _new_id()
+    cur_bd_id = _new_id()
+    eq_id = _new_id()
+    set_var_id = _new_id()
+    set_bd_id = _new_id()
+    bd_menu_id = _new_id()
+    bcast_id = _new_id()
+    stop_id = _new_id()
+
+    blocks[hat_id] = {
+        "opcode": "event_whenkeypressed",
+        "next": if_id,
+        "parent": None,
+        "inputs": {},
+        "fields": {"KEY_OPTION": ["space", None]},
+        "shadow": False,
+        "topLevel": True,
+        "x": 50,
+        "y": 50,
+    }
+    blocks[cur_bd_id] = {
+        "opcode": "looks_backdropnumbername",
+        "next": None,
+        "parent": eq_id,
+        "inputs": {},
+        "fields": {"NUMBER_NAME": ["name", None]},
+        "shadow": False,
+        "topLevel": False,
+    }
+    blocks[eq_id] = {
+        "opcode": "operator_equals",
+        "next": None,
+        "parent": if_id,
+        "inputs": {
+            "OPERAND1": [3, cur_bd_id, [10, ""]],
+            "OPERAND2": [1, [10, from_backdrop_name]],
+        },
+        "fields": {},
+        "shadow": False,
+        "topLevel": False,
+    }
+    blocks[set_var_id] = {
+        "opcode": "data_setvariableto",
+        "next": set_bd_id,
+        "parent": if_id,
+        "inputs": {"VALUE": [1, [10, set_var_value]]},
+        "fields": {"VARIABLE": [set_var_name, var_id]},
+        "shadow": False,
+        "topLevel": False,
+    }
+    blocks[bd_menu_id] = {
+        "opcode": "looks_backdrops",
+        "next": None,
+        "parent": set_bd_id,
+        "inputs": {},
+        "fields": {"BACKDROP": [to_backdrop_name, None]},
+        "shadow": True,
+        "topLevel": False,
+    }
+    blocks[set_bd_id] = {
+        "opcode": "looks_switchbackdropto",
+        "next": bcast_id,
+        "parent": set_var_id,
+        "inputs": {"BACKDROP": [1, bd_menu_id]},
+        "fields": {},
+        "shadow": False,
+        "topLevel": False,
+    }
+    blocks[bcast_id] = {
+        "opcode": "event_broadcast",
+        "next": stop_id,
+        "parent": set_bd_id,
+        "inputs": {"BROADCAST_INPUT": [1, [11, broadcast_name, br_id]]},
+        "fields": {},
+        "shadow": False,
+        "topLevel": False,
+    }
+    # Stop other scripts in Stage → cancels any concurrently-firing legacy space hat
+    # (e.g. stage2's `if 게임상태=="clear"` branch firing on s2_클리어 backdrop)
+    # so we don't accidentally launch the wrong stage.
+    blocks[stop_id] = {
+        "opcode": "control_stop",
+        "next": None,
+        "parent": bcast_id,
+        "inputs": {},
+        "fields": {"STOP_OPTION": ["other scripts in sprite", None]},
+        "shadow": False,
+        "topLevel": False,
+        "mutation": {
+            "tagName": "mutation",
+            "children": [],
+            "hasnext": "false",
+        },
+    }
+    blocks[if_id] = {
+        "opcode": "control_if",
+        "next": None,
+        "parent": hat_id,
+        "inputs": {
+            "CONDITION": [2, eq_id],
+            "SUBSTACK": [2, set_var_id],
+        },
+        "fields": {},
+        "shadow": False,
+        "topLevel": False,
+    }
+
+
+def add_all_transition_space_hats(stage: dict[str, Any]) -> None:
+    """Add the four space-press transition hats wiring intro → s1 → s2 → s3."""
+    # 인트로끝 → s1_스테이지1
+    add_transition_space_hat(
+        stage,
+        from_backdrop_name="인트로끝",
+        set_var_name="게임상태",
+        set_var_value="stage1",
+        to_backdrop_name="s1_스테이지1",
+        broadcast_name="스테이지1",
+    )
+    # s1_클리어 → s2_스테이지2
+    add_transition_space_hat(
+        stage,
+        from_backdrop_name="s1_클리어",
+        set_var_name="게임상태",
+        set_var_value="스테이지2",
+        to_backdrop_name="s2_스테이지2",
+        broadcast_name="스테이지2",
+    )
+    # s2_클리어 → s3_스테이지3
+    add_transition_space_hat(
+        stage,
+        from_backdrop_name="s2_클리어",
+        set_var_name="게임상태",
+        set_var_value="stage3",
+        to_backdrop_name="s3_스테이지3",
+        broadcast_name="스테이지3",
+    )
+    # s3_승리: no transition (game ends, space ignored).
 
 
 def load_source(prefix: str, sb3_path: Path, workdir: Path) -> dict[str, Any]:
@@ -76,8 +310,10 @@ def remap_blocks(
     var_id_map: dict[str, str],
     broadcast_id_map: dict[str, str],
     sprite_name_map: dict[str, str],
+    backdrop_name_map: dict[str, str] | None = None,
 ) -> None:
-    """Rewrite variable IDs, broadcast IDs, and sprite-name fields in-place."""
+    """Rewrite variable IDs, broadcast IDs, sprite-name and backdrop-name fields in-place."""
+    backdrop_name_map = backdrop_name_map or {}
     for _bid, block in blocks.items():
         if not isinstance(block, dict):
             # Top-level reporter shadow: list form. We don't touch.
@@ -87,7 +323,7 @@ def remap_blocks(
         fields = block.get("fields", {}) or {}
         inputs = block.get("inputs", {}) or {}
 
-        # ---- Fields: variables, broadcasts, sprite menus ----
+        # ---- Fields: variables, broadcasts, sprite menus, backdrop menus ----
         for fname, fval in list(fields.items()):
             if not isinstance(fval, list) or len(fval) < 2:
                 continue
@@ -105,6 +341,14 @@ def remap_blocks(
             if fname in ("BROADCAST_OPTION",) and isinstance(ref_id, str):
                 if ref_id in broadcast_id_map:
                     fields[fname] = [name, broadcast_id_map[ref_id]]
+                continue
+
+            # Backdrop name fields (looks_backdrops menu, event_whenbackdropswitchesto hat).
+            if (opcode in BACKDROP_NAME_OPCODES
+                    and fname == "BACKDROP"
+                    and isinstance(name, str)
+                    and name in backdrop_name_map):
+                fields[fname] = [backdrop_name_map[name], ref_id]
                 continue
 
             # Sprite-name fields: ref_id is None and name is the sprite name.
@@ -135,6 +379,18 @@ def remap_blocks(
                 elif tag == 11 and len(slot) >= 3 and isinstance(slot[2], str):
                     if slot[2] in broadcast_id_map:
                         slot[2] = broadcast_id_map[slot[2]]
+
+        # ---- Backdrop name literals inlined in switch_backdrop_to inputs.
+        # Common builders inline `backdrop("이름")` as inputs={"BACKDROP":[1,[10,"이름"]]}
+        # instead of using a looks_backdrops menu block, so handle it here.
+        if opcode in ("looks_switchbackdropto", "looks_switchbackdroptoandwait"):
+            bd_input = inputs.get("BACKDROP")
+            if (isinstance(bd_input, list) and len(bd_input) >= 2
+                    and isinstance(bd_input[1], list) and len(bd_input[1]) >= 2
+                    and bd_input[1][0] == 10
+                    and isinstance(bd_input[1][1], str)
+                    and bd_input[1][1] in backdrop_name_map):
+                bd_input[1][1] = backdrop_name_map[bd_input[1][1]]
 
 
 def merge() -> dict[str, Any]:
@@ -205,6 +461,26 @@ def merge() -> dict[str, Any]:
                 name_map[old_name] = new_name
             per_src_sprite_name_map.append(name_map)
 
+        # ---- Build backdrop-name rename maps (per source) ----
+        # Intro's backdrops keep their names (intro is the game's first screen).
+        # Stage1/2/3 backdrops get prefixed (s1_/s2_/s3_) so that duplicate
+        # names like "클리어" or "시작화면" don't collide in the merged Stage.
+        # All `backdrop("클리어")` calls inside e.g. Stage1's blocks will be
+        # rewritten to `backdrop("s1_클리어")` automatically.
+        per_src_backdrop_name_map: list[dict[str, str]] = []
+        for src in sources:
+            project = src["project"]
+            stage = next(t for t in project["targets"] if t.get("isStage"))
+            name_map: dict[str, str] = {}
+            for c in stage.get("costumes", []):
+                old_name = c["name"]
+                if src["prefix"] == "intro":
+                    new_name = old_name
+                else:
+                    new_name = f"{src['prefix']}_{old_name}"
+                name_map[old_name] = new_name
+            per_src_backdrop_name_map.append(name_map)
+
         # ---- Build merged Stage target ----
         # Concatenate backdrops, dedupe by costume name within Stage.
         merged_costumes: list[dict[str, Any]] = []
@@ -215,14 +491,18 @@ def merge() -> dict[str, Any]:
         for idx, src in enumerate(sources):
             project = src["project"]
             stage = next(t for t in project["targets"] if t.get("isStage"))
+            backdrop_map = per_src_backdrop_name_map[idx]
 
-            # Backdrops: keep order; uniqueness key = (name, md5ext).
+            # Backdrops: rename per-source, keep order; uniqueness key = (new_name, md5ext).
             for c in stage.get("costumes", []):
-                key = (c["name"], c.get("md5ext", ""))
+                c_copy = dict(c)
+                old_name = c_copy["name"]
+                c_copy["name"] = backdrop_map.get(old_name, old_name)
+                key = (c_copy["name"], c_copy.get("md5ext", ""))
                 if key in seen_costume_keys:
                     continue
                 seen_costume_keys.add(key)
-                merged_costumes.append(c)
+                merged_costumes.append(c_copy)
 
             # Remap and merge Stage blocks.
             stage_blocks = json.loads(json.dumps(stage.get("blocks", {})))
@@ -231,6 +511,7 @@ def merge() -> dict[str, Any]:
                 per_src_var_id_map[idx],
                 per_src_broadcast_id_map[idx],
                 per_src_sprite_name_map[idx],
+                backdrop_map,
             )
             # Block IDs are random-looking; collisions are extremely unlikely,
             # but rename if needed by prefixing with source prefix.
@@ -298,6 +579,7 @@ def merge() -> dict[str, Any]:
             bc_map = per_src_broadcast_id_map[idx]
             name_map = per_src_sprite_name_map[idx]
 
+            backdrop_map = per_src_backdrop_name_map[idx]
             for t in project["targets"]:
                 if t.get("isStage"):
                     continue
@@ -305,14 +587,22 @@ def merge() -> dict[str, Any]:
                 sprite["name"] = name_map[sprite["name"]]
 
                 # remap blocks: variable IDs (stage-scoped), broadcast IDs,
-                # and sprite-name menu fields.
-                remap_blocks(sprite.get("blocks", {}), var_map, bc_map, name_map)
+                # sprite-name menu fields, and backdrop-name fields.
+                remap_blocks(sprite.get("blocks", {}), var_map, bc_map, name_map, backdrop_map)
 
                 # ensure unique layerOrder
                 sprite["layerOrder"] = next_layer
                 next_layer += 1
 
                 merged_sprites.append(sprite)
+
+        # ---- Post-merge wiring ----
+        # 1) Hide every non-intro sprite at flag-click start.
+        n_hidden = hide_non_intro_sprites_at_start(merged_sprites)
+        # 2) Intro sprites disappear when backdrop reaches "인트로끝".
+        n_intro_hats = add_intro_hide_hats(merged_sprites, "인트로끝")
+        # 3) Space-press transition hats wiring intro→s1→s2→s3.
+        add_all_transition_space_hats(merged_stage_target)
 
         # ---- Assemble final project ----
         merged_project: dict[str, Any] = {
@@ -360,6 +650,8 @@ def merge() -> dict[str, Any]:
             "variables": [v[0] for v in unified_var_defs.values()],
             "n_broadcasts": len(unified_broadcast_defs),
             "broadcasts": list(unified_broadcast_defs.values()),
+            "n_sprites_hidden_at_start": n_hidden,
+            "n_intro_hide_hats": n_intro_hats,
         }
         return info
     finally:

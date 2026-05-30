@@ -5,7 +5,7 @@
 
 from common import *
 from mechanics import (
-    mario_physics, mario_movement, mario_jump, mario_side_hit,
+    mario_physics, mario_movement, mario_jump, mario_side_hit, mario_enemy_hit,
     mario_gameover, mario_invincibility, hide_on_end,
     mario_platform_landing, mario_platform_block,
 )
@@ -13,7 +13,7 @@ from mechanics import (
 
 QBLOCK_X, QBLOCK_Y = -115, -75
 BLOCK_SIZE = 75            # block1 sprite 32x32 → size 75이면 24x24 화면
-FLOWER_X, FLOWER_Y = QBLOCK_X, -54
+FLOWER_X, FLOWER_Y = QBLOCK_X, -52
 
 # Pipe: 사용자 지정 (-215, -133) sprite 중심. size 15 → 화면 ~38px height. 위 표면 ≈ -114.
 PIPE_X, PIPE_Y, PIPE_SIZE = -215, -133, 15
@@ -87,7 +87,8 @@ def build_stage(am, V, BR):
     gvars = {V[k]: [k, v] for k, v in [("하트", 5), ("속도Y", 0), ("점프중", 0),
                                        ("게임상태", "start"), ("쿠파HP", 10),
                                        ("무적", 0), ("걸음", 1),
-                                       ("파이어", 0), ("꽃등장됨", 0)]}
+                                       ("파이어", 0), ("꽃등장됨", 0),
+                                       ("파이어볼활성", 0)]}
 
     return {
         "isStage": True, "name": "Stage", "variables": gvars, "lists": {}, "comments": {},
@@ -117,6 +118,33 @@ def _build_mario_body(m, V, BR, costume_walk1, costume_jump, sprite_active_when_
     # Stage 1, 2와 동일 방식: mario_side_hit (walking 중 옆 접촉 시 차감)
     enemy_block    = mario_side_hit(m, V, "Bowser", BR=BR, knockback=30,
                                     reset_costume=costume_walk1)
+    # 쿠파 파이어볼: y=-90 고정(마리오 머리 위)이라 touching 불가 → distance<55로 잡음.
+    # 비활성(미발사/hide) 상태에서 마지막 위치 좌표로 잘못 발동되는 것을 막기 위해
+    # 파이어볼활성==1 게이트를 둠 (fireball setup에서 1, hide/stop 시 0).
+    bf_active = m.eq_var("파이어볼활성", V["파이어볼활성"], 1)
+    d_bf = m.distance_to("BowserFireball")
+    # dy ≈ 43(평지 마리오 -133, 파이어볼 -90) → threshold 80이면 |dx|<67px = ~16 frame 동안 cond true.
+    dist_bf = m.lt_block_const(d_bf, 80)
+    contact_bf = m.op_and(bf_active, dist_bf)
+    bf_not_inv = m.eq_var("무적", V["무적"], 0)
+    # 평지(y<-120)에서만 hit. 블록 위(y>-120 정지) 및 점프 중(y가 위로 올라감) 모두 회피 가능.
+    on_ground = m.lt_ypos(-120)
+    bf_cond = m.op_and(m.op_and(contact_bf, bf_not_inv), on_ground)
+    # hit substack에 즉시 게임오버 fallback 포함 (하트 < 1이면 그 자리에서 backdrop 게임오버).
+    bf_go_cond = m.lt_var("하트", V["하트"], 1)
+    bf_go_act = [m.set_var("게임상태", V["게임상태"], "gameover"),
+                 m.backdrop("게임오버")]
+    m.chain(bf_go_act)
+    bf_if_go = m.if_then(bf_go_cond, bf_go_act[0])
+    bf_act = [m.change_var("하트", V["하트"], -1),
+              m.broadcast("피격", BR["피격"]),
+              m.move(-30),
+              m.set_var("속도Y", V["속도Y"], 0),
+              m.set_var("점프중", V["점프중"], 0),
+              m.costume(costume_walk1),
+              bf_if_go]
+    m.chain(bf_act)
+    if_bf = m.if_then(bf_cond, bf_act[0])
     gameover_block = mario_gameover(m, V)
 
     cwin = m.lt_var("쿠파HP", V["쿠파HP"], 1)
@@ -152,7 +180,8 @@ def _build_mario_body(m, V, BR, costume_walk1, costume_jump, sprite_active_when_
     m.chain(hit_d)
     if_d_bw = m.if_then(cand_d, hit_d[0])
 
-    all_blocks = (physics_blocks + landing_blocks + [if_qb] + block_blocks
+    # if_bf를 chain 앞쪽으로 두어 다른 처리(특히 mario_side_hit의 wait)에 가려지지 않도록.
+    all_blocks = ([if_bf] + physics_blocks + landing_blocks + [if_qb] + block_blocks
                   + move_blocks
                   + [jump_block, enemy_block, if_d_bw, gameover_block, ifw3])
 
@@ -396,7 +425,25 @@ def make_bowser(am, V, BR, sounds):
         bw.goto(160, -136),
         bw.costume("쿠파"),
         bw.say_for("덤벼라 마리오!", 3.5),
+        bw.wait(1),
+        # 첫 발사: 걷기5 → broadcast → 걷기4
+        bw.costume("걷기5"),
+        bw.broadcast("쿠파발사", BR["쿠파발사"]),
+        bw.wait(0.3),
+        bw.costume("걷기4"),
     ]
+    # 그 후 3초 간격: wait → if 쿠파HP>0 then 걷기5+broadcast+wait+걷기4
+    shoot_wait = bw.wait(3)
+    shoot_cond = bw.gt_var("쿠파HP", V["쿠파HP"], 0)
+    shoot_seq = [bw.costume("걷기5"),
+                 bw.broadcast("쿠파발사", BR["쿠파발사"]),
+                 bw.wait(0.3),
+                 bw.costume("걷기4")]
+    bw.chain(shoot_seq)
+    shoot_if = bw.if_then(shoot_cond, shoot_seq[0])
+    bw.chain([shoot_wait, shoot_if])
+    shoot_forever = bw.forever(shoot_wait)
+    intro_chain.append(shoot_forever)
     bw.chain([bwh3] + intro_chain)
 
     # 쿠파맞음 broadcast 받으면 으악
@@ -433,6 +480,59 @@ def make_bowser(am, V, BR, sounds):
 
 
 # ════════════════════════════════════════════════════════════════════════
+# 쿠파 파이어볼 (마리오를 향해 발사 → 맞으면 하트 차감)
+# ════════════════════════════════════════════════════════════════════════
+def make_bowser_fireball(am, V, BR, sounds):
+    bf = BB()
+    bff = bf.flag()
+    bf.chain([bff, bf.set_var("파이어볼활성", V["파이어볼활성"], 0), bf.hide()])
+
+    bfh = bf.bcast_hat("쿠파발사", BR["쿠파발사"])
+    # 쿠파 정면(입 위치)에서 출발 + 수평(왼쪽) 발사. y=-90 고정. 활성 게이트로 hit 검사 분리.
+    setup = [
+        bf.set_x_block(bf.op_add_block_const(bf.sense_of_xpos("Bowser"), -25)),
+        bf.set_y(-90),
+        bf.set_size(5),
+        bf.point_dir(-90),
+        bf.set_var("파이어볼활성", V["파이어볼활성"], 1),
+        bf.show(),
+    ]
+
+    # forever: move + 마리오 접촉 시 hide(차감/넉백/무적은 mario sprite가 처리)
+    # + 게임상태 변경(게임오버/승리/intro) 시 즉시 stop+hide
+    move = bf.move(8)
+    tt_m1 = bf.touching("Mario")
+    tt_m2 = bf.touching("WhiteMario")
+    tt_touch = bf.op_or(tt_m1, tt_m2)
+    hide_act = [bf.set_var("파이어볼활성", V["파이어볼활성"], 0), bf.hide(), bf.stop_this()]
+    bf.chain(hide_act)
+    if_touch = bf.if_then(tt_touch, hide_act[0])
+    # 게임상태 != "stage3" → 즉시 사라짐
+    not_active = bf.op_not(bf.eq_var("게임상태", V["게임상태"], "stage3"))
+    inactive_act = [bf.set_var("파이어볼활성", V["파이어볼활성"], 0), bf.hide(), bf.stop_this()]
+    bf.chain(inactive_act)
+    if_inactive = bf.if_then(not_active, inactive_act[0])
+    edge_cond = bf.touching("_edge_")
+    edge_act = [bf.set_var("파이어볼활성", V["파이어볼활성"], 0), bf.hide(), bf.stop_this()]
+    bf.chain(edge_act)
+    if_edge = bf.if_then(edge_cond, edge_act[0])
+    bf.chain([move, if_touch, if_inactive, if_edge])
+    fl = bf.forever(move)
+    bf.chain([bfh] + setup + [fl])
+
+    hide_on_end(bf, ("게임오버", "승리"))
+    return {
+        "isStage": False, "name": "BowserFireball",
+        "variables": {}, "lists": {}, "broadcasts": {}, "comments": {},
+        "blocks": bf.blocks, "currentCostume": 0,
+        "costumes": [am.reg_png("fire", "koopa/bowser_fireball.png")],
+        "sounds": sounds, "volume": 100, "layerOrder": 5, "visible": False,
+        "x": 0, "y": 0, "size": 5, "direction": 90,
+        "draggable": False, "rotationStyle": "all around",
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════
 # Peach
 # ════════════════════════════════════════════════════════════════════════
 def make_peach(am, V, BR):
@@ -444,24 +544,33 @@ def make_peach(am, V, BR):
     p.chain([ph3] + pi3)
 
     # 피치 등장 시퀀스: "쿠파패배" broadcast 받으면 쿠파 멘트(2초) + 도망(2초) 후
-    # 오른쪽 화면 밖에서 등장 → 마리오 쪽으로 걸어오기 → 감사 멘트
+    # 오른쪽 화면 밖에서 등장 → 마리오 쪽으로 걸어오기(코스튬 cycle) → 감사 멘트.
+    # 멘트 칠 때 방향 그대로 유지(왼쪽). 멘트 후엔 그 자리 머무름 → 승리 backdrop 전환 시 hide.
     ph_defeat = p.bcast_hat("쿠파패배", BR["쿠파패배"])
-    p.chain([ph_defeat,
-             p.wait(4),
-             p.goto(260, GY),
-             p.point_dir(-90),
-             p.show(),
-             p.glide_xy(3, 60, GY),
-             p.point_dir(90),
-             p.say_for("구해줘서 고마워요 마리오!", 4)])
+    PEACH_Y_S3 = -135
+    peach_walk_chain = [ph_defeat,
+                        p.wait(4),
+                        p.goto(260, PEACH_Y_S3),
+                        p.point_dir(-90),
+                        p.costume("walk1"),
+                        p.show()]
+    # 15 step × change_x(-13) = -195, 0.2s each (~3s total). 코스튬 cycle (walk1~7 modulo).
+    for i in range(15):
+        peach_walk_chain += [p.change_x(-13), p.costume(f"walk{(i % 7) + 1}"), p.wait(0.2)]
+    # 멘트 시 위치 그대로 유지 (뒤로 물러섬 방지). 마지막 step의 x = 60 (= 260 + 15*-13 + 5 보정)
+    peach_walk_chain += [p.costume("peach"),
+                         p.say_for("구해줘서 고마워요 마리오!", 4)]
+    p.chain(peach_walk_chain)
 
     hide_on_end(p, ("게임오버", "승리"))
 
     return {
         "isStage": False, "name": "Peach", "variables": {}, "lists": {}, "broadcasts": {}, "comments": {},
-        "blocks": p.blocks, "currentCostume": 0, "costumes": [am.reg_png("피치", "peach/peach_idle.png")],
+        "blocks": p.blocks, "currentCostume": 0,
+        "costumes": [am.reg_png("peach", "peach/peach_idle.png")]
+                    + [am.reg_png(f"walk{i+1}", f"peach/peach_walk_{i+1}.png") for i in range(7)],
         "sounds": [], "volume": 100, "layerOrder": 7, "visible": False,
-        "x": 180, "y": GY, "size": 45, "direction": 90, "draggable": False, "rotationStyle": "don't rotate"
+        "x": 180, "y": GY, "size": 45, "direction": 90, "draggable": False, "rotationStyle": "left-right"
     }
 
 
@@ -473,14 +582,21 @@ def make_fireball(am, V, BR, sounds):
 
     # 파이어볼 발사: forever + 매 프레임 move + 충돌 체크
     fbc = fb.bcast_hat("발사", BR["발사"])
-    cfire = fb.eq_var("파이어", V["파이어"], 1)
+    cfire_var = fb.eq_var("파이어", V["파이어"], 1)
+    c_stage3 = fb.eq_var("게임상태", V["게임상태"], "stage3")
+    cfire = fb.op_and(cfire_var, c_stage3)
 
-    # 발사 setup — 마리오 정중앙에서 출발. 시각은 PNG에 167°가 baked-in 되어 있고
-    # direction은 point_towards로 쿠파 방향. 블록 위 발사 시 자연스럽게 대각선.
+    # 발사 setup — 마리오 정중앙에서 출발.
+    # 오른쪽 보면 point_towards(Bowser) → 자연스럽게 쿠파 방향(블록 위에서 대각선 가능).
+    # 왼쪽 보면 point_dir(-90) → 왼쪽 수평 발사.
+    mario_dir = fb.sense_of_direction("WhiteMario")
+    cond_left = fb.lt_block_const(mario_dir, 0)
+    if_left = fb.if_then(cond_left, fb.point_dir(-90))
     setup = [fb.set_x_block(fb.sense_of_xpos("WhiteMario")),
              fb.set_y_block(fb.op_add_block_const(fb.sense_of_ypos("WhiteMario"), 8)),
              fb.set_size(5),
              fb.point_towards("Bowser"),
+             if_left,
              fb.show(), fb.play_sound("Fire")]
     fb.chain(setup)
 
@@ -489,7 +605,10 @@ def make_fireball(am, V, BR, sounds):
     d_b = fb.distance_to("Bowser")
     tt_b = fb.touching("Bowser")
     dist_cond = fb.lt_block_const(d_b, 50)
-    hit_cond = fb.op_or(tt_b, dist_cond)
+    hit_or = fb.op_or(tt_b, dist_cond)
+    # 쿠파 체력 > 0인 경우에만 hit 발동 (이미 0이면 추가 broadcast 없음)
+    cond_alive = fb.gt_var("쿠파HP", V["쿠파HP"], 0)
+    hit_cond = fb.op_and(hit_or, cond_alive)
     # 쿠파HP -1 + 맞음 broadcast. 마지막 hit (HP<1) 시 "쿠파패배" broadcast로 엔딩 트리거.
     defeat_cond = fb.lt_var("쿠파HP", V["쿠파HP"], 1)
     defeat_br = fb.broadcast("쿠파패배", BR["쿠파패배"])
@@ -524,7 +643,7 @@ def make_fireball(am, V, BR, sounds):
         "isStage": False, "name": "Fireball", "variables": {}, "lists": {}, "broadcasts": {}, "comments": {},
         "blocks": fb.blocks, "currentCostume": 0, "costumes": [am.reg_png("fire", "items/fireball.png")],
         "sounds": sounds, "volume": 100, "layerOrder": 5, "visible": False,
-        "x": 0, "y": 0, "size": 100, "direction": 90, "draggable": False, "rotationStyle": "don't rotate"
+        "x": 0, "y": 0, "size": 100, "direction": 90, "draggable": False, "rotationStyle": "left-right"
     }
 
 
@@ -544,9 +663,9 @@ def add_fire_transform_hat(mario_sprite_blocks_bb, V, BR):
 # ════════════════════════════════════════════════════════════════════════
 def build():
     am = AssetManager()
-    BR = {k: uid() for k in ["스테이지3", "피격", "꽃등장", "파이어변신", "발사", "쿠파맞음", "쿠파패배"]}
+    BR = {k: uid() for k in ["스테이지3", "피격", "꽃등장", "파이어변신", "발사", "쿠파맞음", "쿠파패배", "쿠파발사"]}
     V = {k: uid() for k in ["하트", "속도Y", "점프중", "게임상태", "쿠파HP",
-                            "무적", "걸음", "파이어", "꽃등장됨"]}
+                            "무적", "걸음", "파이어", "꽃등장됨", "파이어볼활성"]}
 
     snd_jump = am.reg_snd("Jump", gen_beep(600, 0.1))
     snd_hit = am.reg_snd("Hit", gen_beep(200, 0.2))
@@ -563,6 +682,7 @@ def build():
     flower = make_fire_flower(am, V, BR)
     white_mario = build_white_mario(am, V, BR)
     bowser = make_bowser(am, V, BR, [snd_hit])
+    bowser_fireball = make_bowser_fireball(am, V, BR, [snd_fire])
     peach = make_peach(am, V, BR)
     fireball = make_fireball(am, V, BR, [snd_fire])
     hearts = make_hearts(am, V, BR=BR, restart_br_key="스테이지3")
@@ -594,7 +714,7 @@ def build():
 
     project = {
         "targets": [stage_target, brick_left, qblock, brick_right, pipe, flower,
-                    bowser, peach, fireball, mario, white_mario, hearts,
+                    bowser, bowser_fireball, peach, fireball, mario, white_mario, hearts,
                     bowser_hearts],
         "monitors": [],
         "extensions": [],
